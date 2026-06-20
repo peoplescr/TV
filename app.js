@@ -33,7 +33,7 @@
   // Set this to the real PWA URL (GitHub Pages, Netlify, etc.). Share/invite
   // links are built from this so they work for anyone — APK, browser, any phone.
   // Leave "" to fall back to location.href (fine when served from a real URL).
-  var PUBLIC_URL = "https://uhzain.github.io/watch-party";
+  var PUBLIC_URL = "https://foralt67672-maker.github.io/watch-party";
 
   // Build a shareable invite link for a room code. Uses PUBLIC_URL whenever it's
   // set (so APK / localhost origins produce real links). Falls back to the live
@@ -1884,6 +1884,10 @@
     // show locally: pause any file, attach stream
     if (player.src && player.src.indexOf("blob:") === 0) { URL.revokeObjectURL(player.src); player.removeAttribute("src"); player.load(); }
     player.srcObject = stream;
+    // Mute the host's local player so audio doesn't double-play (you hear
+    // the original tab directly, not through the <video> element). The stream
+    // itself keeps its audio tracks intact, so viewers still get audio.
+    player.muted = true;
     hideEmpty(); hideOverlay();
     try { await player.play(); } catch (e) {}
 
@@ -1915,6 +1919,7 @@
       state.screenStream = null;
     }
     player.srcObject = null;
+    player.muted = false;
     if (state.fileName) {
       // file was loaded before screen share — show the placeholder; viewer
       // can re-load their file. The blob URL was revoked when screen started.
