@@ -247,6 +247,72 @@
         </label>
       </div>
 
+      <!-- TURN servers -->
+      <div class="set-block">
+        <div class="set-label">TURN Servers</div>
+
+        <label class="set-row">
+          <span class="set-row-text">
+            <strong>Cloud TURN</strong>
+            <small>ExpressTURN free relay servers</small>
+          </span>
+          <span class="switch">
+            <input type="checkbox" id="cloud-turn-toggle" checked />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </span>
+        </label>
+
+        <label class="set-row">
+          <span class="set-row-text">
+            <strong>Local Phone TURN</strong>
+            <small>Your own relay server (Termux + coturn)</small>
+          </span>
+          <span class="switch">
+            <input type="checkbox" id="local-turn-toggle" />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </span>
+        </label>
+
+        <div id="local-turn-fields" class="local-turn-fields hidden">
+          <div class="ltf-row">
+            <label for="ltf-host">Host</label>
+            <input id="ltf-host" type="text" placeholder="myphone.duckdns.org" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="ltf-row">
+            <label for="ltf-port">Port</label>
+            <input id="ltf-port" type="number" value="3478" min="1" max="65535" />
+          </div>
+          <div class="ltf-row">
+            <label for="ltf-user">Username</label>
+            <input id="ltf-user" type="text" placeholder="myuser" autocomplete="off" />
+          </div>
+          <div class="ltf-row">
+            <label for="ltf-pass">Password</label>
+            <input id="ltf-pass" type="password" placeholder="mypassword" autocomplete="off" />
+          </div>
+          <button id="ltf-save" class="ltf-save">Save</button>
+        </div>
+      </div>
+
+      <!-- TURN relay monitor -->
+      <div class="set-block">
+        <div class="set-label">Relay Monitor</div>
+        <div id="turn-monitor" class="turn-monitor">
+          <div class="tm-row">
+            <span class="tm-label">Active relay</span>
+            <span id="tm-relay" class="tm-value">—</span>
+          </div>
+          <div class="tm-row">
+            <span class="tm-label">Relayed connections</span>
+            <span id="tm-count" class="tm-value">0</span>
+          </div>
+          <div class="tm-row">
+            <span class="tm-label">Local server</span>
+            <span id="tm-local" class="tm-value tm-status">Not configured</span>
+          </div>
+        </div>
+      </div>
+
       <!-- connection info -->
       <div class="set-block">
         <div class="set-label">Connection</div>

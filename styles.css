@@ -748,6 +748,60 @@ input::placeholder { color: var(--text-mut); }
 .switch input:checked + .switch-track { background: var(--accent-soft); border-color: var(--accent); }
 .switch input:checked + .switch-track .switch-thumb { transform: translateX(18px); background: var(--accent); }
 
+/* --- local TURN fields (collapsible) --- */
+.local-turn-fields {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex; flex-direction: column; gap: 10px;
+  max-height: 320px; overflow: hidden;
+  opacity: 1; transition: max-height .25s ease, opacity .18s ease, margin .2s ease;
+}
+.local-turn-fields.hidden {
+  max-height: 0; opacity: 0; margin-top: 0; padding-top: 0; padding-bottom: 0;
+  pointer-events: none; border-width: 0;
+}
+.ltf-row { display: flex; align-items: center; gap: 10px; }
+.ltf-row label {
+  flex-shrink: 0; width: 72px; font-size: 13px; color: var(--text-dim);
+}
+.ltf-row input {
+  flex: 1; min-width: 0;
+  background: var(--panel); border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm); padding: 7px 10px;
+  color: var(--text); font-size: 13px; outline: none;
+  transition: border-color .15s;
+}
+.ltf-row input:focus { border-color: var(--accent); }
+.ltf-row input::placeholder { color: var(--text-mut); }
+.ltf-save {
+  align-self: flex-end;
+  padding: 7px 18px; font-size: 13px; font-weight: 600;
+  color: var(--bg); background: var(--accent);
+  border: none; border-radius: var(--radius-sm);
+  cursor: pointer; transition: background .15s;
+}
+.ltf-save:active { background: var(--accent-d); }
+
+/* --- TURN relay monitor --- */
+.turn-monitor { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.tm-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.tm-label { color: var(--text-dim); }
+.tm-value { color: var(--text); font-variant-numeric: tabular-nums; }
+.tm-status {
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.tm-status::before {
+  content: ""; display: inline-block;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-mut);
+}
+.tm-status.tm-ok::before   { background: var(--ok); }
+.tm-status.tm-warn::before { background: var(--warn); }
+.tm-status.tm-err::before  { background: var(--err); }
+
 .net-info { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .net-info-row { display: flex; justify-content: space-between; gap: 10px; }
 .net-info-row span:first-child { color: var(--text-dim); }
@@ -852,6 +906,8 @@ input::placeholder { color: var(--text-mut); }
   .chat-swipe { display: none; }
   #chat-fab { display: none !important; }
   .chat-backdrop { display: none !important; }
+  /* hide bottom action bar for a cleaner fullscreen experience — only video + chat */
+  .actions { display: none; }
 }
 
 /* ---- Desktop: keep the old "collapse" toggle hidden, chat always visible ---- */

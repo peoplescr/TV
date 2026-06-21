@@ -103,13 +103,26 @@
   // next. More credentials = more aggregate monthly quota + redundancy.
   function iceServers() {
     var servers = [];
-    for (var i = 0; i < TURN_CREDENTIALS.length; i++) {
-      var c = TURN_CREDENTIALS[i];
-      servers.push({ urls: "turn:" + c.host + ":" + c.port,
-                     username: c.username, credential: c.password });
-      servers.push({ urls: "turn:" + c.host + ":" + c.port + "?transport=tcp",
-                     username: c.username, credential: c.password });
+    // Cloud TURN (ExpressTURN)
+    if (LocalTurn.cloudOn) {
+      for (var i = 0; i < TURN_CREDENTIALS.length; i++) {
+        var c = TURN_CREDENTIALS[i];
+        servers.push({ urls: "turn:" + c.host + ":" + c.port,
+                       username: c.username, credential: c.password });
+        servers.push({ urls: "turn:" + c.host + ":" + c.port + "?transport=tcp",
+                       username: c.username, credential: c.password });
+      }
     }
+    // Local phone TURN
+    var d = LocalTurn.get();
+    if (d.enabled && d.host && d.username && d.password) {
+      var p = d.port || 3478;
+      servers.push({ urls: "turn:" + d.host + ":" + p,
+                     username: d.username, credential: d.password });
+      servers.push({ urls: "turn:" + d.host + ":" + p + "?transport=tcp",
+                     username: d.username, credential: d.password });
+    }
+    // STUN fallbacks (always included)
     servers.push({ urls: "stun:stun.l.google.com:19302" });
     servers.push({ urls: "stun:stun.cloudflare.com:3478" });
     return servers;
@@ -121,6 +134,157 @@
   var TURN_CONFIGURED = true;
   function whenXirsysReady(cb) { cb(true); }
   function _resolveTurn() { updateTurnBadge(); }
+
+  /* ============================================================
+     Local Phone TURN — user-configurable, saved in localStorage.
+     ============================================================ */
+  var LT_KEY = "wp-local-turn";
+  var LocalTurn = {
+    _d: { enabled: false, host: "", port: 3478, username: "", password: "" },
+    cloudOn: true,
+    load: function () {
+      try {
+        var raw = localStorage.getItem(LT_KEY);
+        if (raw) {
+          var saved = JSON.parse(raw);
+          this._d.enabled = !!saved.enabled;
+          this._d.host    = saved.host || "";
+          this._d.port    = saved.port || 3478;
+          this._d.username = saved.username || "";
+          this._d.password = saved.password || "";
+        }
+        this.cloudOn = localStorage.getItem(LT_KEY + "-cloud") !== "off";
+      } catch (e) {}
+    },
+    save: function () {
+      try {
+        localStorage.setItem(LT_KEY, JSON.stringify(this._d));
+        localStorage.setItem(LT_KEY + "-cloud", this.cloudOn ? "on" : "off");
+      } catch (e) {}
+    },
+    get: function ()  { return this._d; },
+    isConfigured: function () {
+      var d = this._d;
+      return d.enabled && d.host && d.username && d.password;
+    }
+  };
+  LocalTurn.load();
+
+  /* TURN relay monitor state */
+  var TurnMonitor = {
+    relayHost: "—",
+    relayCount: 0,
+    localStatus: "Not configured",
+    localClass: "",
+    update: function () {
+      var el;
+      el = $("tm-relay"); if (el) el.textContent = this.relayHost;
+      el = $("tm-count"); if (el) el.textContent = this.relayCount;
+      el = $("tm-local");
+      if (el) {
+        el.textContent = this.localStatus;
+        el.className = "tm-value tm-status " + this.localClass;
+      }
+    }
+  };
+
+  /* Poll active peer connections for TURN relay stats */
+  var _tmTimer = null;
+  function startTurnMonitor() {
+    if (_tmTimer) return;
+    _tmTimer = setInterval(pollTurnStats, 5000);
+  }
+  function pollTurnStats() {
+    var peer = state.peer;
+    if (!peer) return;
+    var activeConn = peer.connections;
+    if (!activeConn) return;
+    var count = 0;
+    var seenHosts = [];
+    Object.keys(activeConn).forEach(function (key) {
+      var arr = activeConn[key];
+      for (var i = 0; i < arr.length; i++) {
+        var pc = arr[i] && arr[i].peerConnection;
+        if (!pc) continue;
+        try {
+          pc.getStats().then(function (stats) {
+            stats.forEach(function (report) {
+              if (report.type === "candidate-pair" && report.state === "succeeded") {
+                var local = stats.get(report.localCandidateId);
+                if (local && local.candidateType === "relay") {
+                  var host = local.relayProtocol ? "Relay (" + local.relayProtocol + ")" : "Relay";
+                  // extract relay host from candidate if available
+                  if (local.candidate) {
+                    var m = local.candidate.match(/relay ([\w.\-]+)/);
+                    if (m) host = m[1];
+                  }
+                  if (TurnMonitor.relayHost !== host) {
+                    TurnMonitor.relayHost = host;
+                  }
+                }
+              }
+            });
+          }).catch(function () {});
+        } catch (e) {}
+      }
+    });
+    // Count total connected peers as a proxy for relayed connections
+    Object.keys(activeConn).forEach(function (key) {
+      var arr = activeConn[key];
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i] && arr[i].open) count++;
+      }
+    });
+    if (TurnMonitor.relayCount !== count) TurnMonitor.relayCount = count;
+    TurnMonitor.update();
+  }
+
+  /* Quick reachability probe for the local TURN server */
+  function probeLocalTurn(cb) {
+    var d = LocalTurn.get();
+    if (!d.enabled || !d.host || !d.username) {
+      TurnMonitor.localStatus = "Not configured";
+      TurnMonitor.localClass = "";
+      TurnMonitor.update();
+      if (cb) cb(false);
+      return;
+    }
+    TurnMonitor.localStatus = "Checking…";
+    TurnMonitor.localClass = "tm-warn";
+    TurnMonitor.update();
+    // Create a temporary RTCPeerConnection to probe TURN allocation
+    var pc = new RTCPeerConnection({
+      iceServers: [{
+        urls: "turn:" + d.host + ":" + d.port,
+        username: d.username,
+        credential: d.password
+      }]
+    });
+    var done = false;
+    var timer = setTimeout(function () {
+      if (!done) { done = true; pc.close(); fail("Timeout"); }
+    }, 6000);
+    function fail(msg) {
+      TurnMonitor.localStatus = msg;
+      TurnMonitor.localClass = "tm-err";
+      TurnMonitor.update();
+      if (cb) cb(false);
+    }
+    function ok() {
+      if (!done) { done = true; clearTimeout(timer); pc.close(); }
+      TurnMonitor.localStatus = "Reachable";
+      TurnMonitor.localClass = "tm-ok";
+      TurnMonitor.update();
+      if (cb) cb(true);
+    }
+    pc.onicecandidate = function (e) {
+      if (!e || !e.candidate) return;
+      var c = e.candidate.candidate;
+      if (c && c.indexOf("typ relay") !== -1) { ok(); }
+    };
+    pc.createDataChannel("probe");
+    pc.createOffer().then(function (offer) { return pc.setLocalDescription(offer); }).catch(function () { fail("Error"); });
+  }
 
   var PEER_PREFIX = "wp-";           // host peer id = PEER_PREFIX + room
   var DRIFT_HARD = 1.5;              // seconds — hard seek above this
@@ -545,6 +709,8 @@
       sysMsg("Share the link with friends to watch together.");
       startHostSync();
       startPing();
+      startTurnMonitor();
+      if (LocalTurn.isConfigured()) probeLocalTurn();
       setOnline("connecting");   // host is on the network, waiting for viewers
     });
 
@@ -620,6 +786,8 @@
       peer.on("open", function () {
         setOverlayWaiting();
         setOnline("connecting");
+        startTurnMonitor();
+        if (LocalTurn.isConfigured()) probeLocalTurn();
         var conn = peer.connect(peerIdFor(code), { reliable: true });
         DataMeter.wrapConn(conn);   // count outgoing bytes on this connection
         conn.on("open", function () {
@@ -1806,6 +1974,7 @@
     $("settings-sheet").classList.remove("hidden");
     DataMeter.render();
     renderNetInfo();
+    TurnMonitor.update();
   }
   function closeSettings() {
     $("settings-backdrop").classList.add("hidden");
@@ -1844,6 +2013,71 @@
         renderNetInfo();
       });
     }
+
+    // ---- Cloud TURN toggle ----
+    var cloudTog = $("cloud-turn-toggle");
+    cloudTog.checked = LocalTurn.cloudOn;
+    cloudTog.addEventListener("change", function () {
+      if (!cloudTog.checked && !$("local-turn-toggle").checked) {
+        cloudTog.checked = true;
+        toast("At least one TURN source must be active.", "warn");
+        return;
+      }
+      LocalTurn.cloudOn = cloudTog.checked;
+      LocalTurn.save();
+      toast("Cloud TURN " + (cloudTog.checked ? "enabled." : "disabled."), cloudTog.checked ? "ok" : "");
+    });
+
+    // ---- Local Phone TURN toggle ----
+    var localTog = $("local-turn-toggle");
+    var ltfFields = $("local-turn-fields");
+    var d = LocalTurn.get();
+    localTog.checked = d.enabled;
+    if (d.enabled) ltfFields.classList.remove("hidden");
+
+    // populate saved fields
+    $("ltf-host").value = d.host;
+    $("ltf-port").value = d.port || 3478;
+    $("ltf-user").value = d.username;
+    $("ltf-pass").value = d.password;
+
+    localTog.addEventListener("change", function () {
+      if (!localTog.checked && !cloudTog.checked) {
+        localTog.checked = true;
+        toast("At least one TURN source must be active.", "warn");
+        return;
+      }
+      d.enabled = localTog.checked;
+      LocalTurn.save();
+      if (localTog.checked) {
+        ltfFields.classList.remove("hidden");
+      } else {
+        ltfFields.classList.add("hidden");
+      }
+      toast("Local Phone TURN " + (localTog.checked ? "enabled — fill in your server details." : "disabled."),
+            localTog.checked ? "ok" : "");
+      if (localTog.checked) probeLocalTurn();
+      else {
+        TurnMonitor.localStatus = "Not configured";
+        TurnMonitor.localClass = "";
+        TurnMonitor.update();
+      }
+    });
+
+    // ---- Save local TURN fields ----
+    $("ltf-save").addEventListener("click", function () {
+      d.host     = $("ltf-host").value.trim();
+      d.port     = parseInt($("ltf-port").value, 10) || 3478;
+      d.username = $("ltf-user").value.trim();
+      d.password = $("ltf-pass").value.trim();
+      if (!d.host || !d.username || !d.password) {
+        toast("Host, username, and password are required.", "warn");
+        return;
+      }
+      LocalTurn.save();
+      toast("Local TURN saved! (takes effect on next connection)", "ok");
+      probeLocalTurn();
+    });
   }
 
   /* ============================================================
