@@ -2424,6 +2424,8 @@
     console.log("[Watch Party] chat wired");
     wireActions();
     console.log("[Watch Party] actions wired");
+    wireSettings();
+    console.log("[Watch Party] settings wired");
     updateTurnBadge();   // show initial TURN… state (updates again when fetch settles)
     window.addEventListener("hashchange", onHash);
 
