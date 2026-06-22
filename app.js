@@ -948,16 +948,20 @@
         break;
 
       case "chat":
-        // Rich chat. {mid, name, pfp, text, reply?:{name,text}}
+        // Rich chat. {mid, name, pfp, text|kind:"sticker"+sticker, reply?:{name,text}}
         addChat({
           name: data.name || "Peer",
           pfp: data.pfp,
           text: data.text,
+          kind: data.kind || null,
+          sticker: data.sticker || null,
           mid: data.mid,
           reply: data.reply || null
         });
         // bump the FAB unread badge if the drawer is closed (mobile)
         try { ChatDrawer.onIncoming(); } catch (e) {}
+        // mirror into the fullscreen overlay (toast + panel)
+        try { FsChat.onNewMessage({ name: data.name || "Peer", text: data.text || (data.sticker && data.sticker.emoji) || "" }); } catch (e) {}
         // HOST RELAY: a viewer sent a chat — rebroadcast to every OTHER peer
         // so 3+ person rooms all see each other's messages.
         if (state.isHost) relayToOthers(conn, data);
@@ -971,6 +975,13 @@
           // to save redraws (the reaction still attaches to the bubble above)
           if (DataSaver.floatRemote()) floatEmoji(data.emoji);
         }
+        if (state.isHost) relayToOthers(conn, data);
+        break;
+
+      case "doodle":
+        // {op:"start"|"pt"|"end"|"clear", id, name?, color?, x?, y?, pts?}
+        // freehand strokes on the doodle layer; fade after 7s.
+        try { Doodles.onRemote(data); } catch (e) {}
         if (state.isHost) relayToOthers(conn, data);
         break;
 
@@ -1423,6 +1434,87 @@
     }
   };
 
+  /* ---- DoodleBar — whether the drawing toolbar is shown ---- */
+  var DoodleBar = {
+    KEY: "wp-doodlebar",
+    ON: true,         // default: toolbar visible when drawing
+    load: function () {
+      try {
+        var v = localStorage.getItem(this.KEY);
+        if (v === "off") this.ON = false;
+        else this.ON = true;
+      } catch (e) {}
+      return this.ON;
+    },
+    set: function (on) {
+      this.ON = !!on;
+      try { localStorage.setItem(this.KEY, this.ON ? "on" : "off"); } catch (e) {}
+      // apply immediately if currently drawing
+      try { applyDoodleBarVisibility(); } catch (e) {}
+    }
+  };
+  DoodleBar.load();
+
+  function applyDoodleBarVisibility() {
+    var bar = $("doodle-bar");
+    var hideBtn = $("fs-hidebar-btn");
+    if (!bar) return;
+    // only visible when: drawing mode is ON AND DoodleBar.ON is true
+    var show = Doodles.isOn() && DoodleBar.ON;
+    bar.hidden = !show;
+    if (hideBtn) hideBtn.hidden = !show;
+  }
+
+  /* ------------------------------------------------------------
+     ChatOpacity — message & background opacity for the FULLSCREEN
+     chat overlay (0–100%). Persisted in localStorage, written to
+     the CSS vars --fs-chat-text-op / --fs-chat-bg-op on :root.
+       text = opacity of each message as a unit (bubble + text)
+       bg   = opacity of the panel sheet behind the messages
+     The CSS only consumes them inside the FS overlay, so the
+     normal (non-fullscreen) chat is untouched.
+     ------------------------------------------------------------ */
+  var ChatOpacity = {
+    KEY: "wp-chat-opacity",
+    DEF_TEXT: 80,
+    DEF_BG: 100,
+    text: 80,
+    bg: 100,
+    clamp: function (n) {
+      n = parseInt(n, 10);
+      if (isNaN(n)) n = 0;
+      if (n < 0) n = 0;
+      if (n > 100) n = 100;
+      return n;
+    },
+    // push current values into the CSS custom properties
+    apply: function () {
+      var root = document.documentElement;
+      root.style.setProperty("--fs-chat-text-op", (this.text / 100).toString());
+      root.style.setProperty("--fs-chat-bg-op", (this.bg / 100).toString());
+    },
+    set: function (text, bg) {
+      this.text = this.clamp(text);
+      this.bg = this.clamp(bg);
+      try {
+        localStorage.setItem(this.KEY, JSON.stringify({ text: this.text, bg: this.bg }));
+      } catch (e) {}
+      this.apply();
+    },
+    load: function () {
+      try {
+        var raw = localStorage.getItem(this.KEY);
+        if (raw) {
+          var o = JSON.parse(raw);
+          this.text = this.clamp(o.text != null ? o.text : this.DEF_TEXT);
+          this.bg = this.clamp(o.bg != null ? o.bg : this.DEF_BG);
+        }
+      } catch (e) {}
+      this.apply();
+      return { text: this.text, bg: this.bg };
+    }
+  };
+
   function getConnection() {
     return (navigator.connection || navigator.mozConnection || navigator.webkitConnection) || null;
   }
@@ -1479,13 +1571,14 @@
     function init() {
       panel = $("chat");
       backdrop = $("chat-backdrop");
-      fab = $("chat-fab");
-      badge = $("chat-fab-badge");
+      fab = null;        // FAB removed — chat is opened from the action bar
+      badge = $("chat-act-badge");
       input = $("chat-input");
       isMobile = window.matchMedia("(max-width: 1023px)").matches;
 
-      // FAB toggle
-      if (fab) fab.addEventListener("click", function () { open(); });
+      // Chat action button (in the controls tray) toggles the sheet
+      var chatBtn = $("chat-btn");
+      if (chatBtn) chatBtn.addEventListener("click", function () { toggle(); });
 
       // backdrop closes
       if (backdrop) backdrop.addEventListener("click", function () { close(); });
@@ -1502,10 +1595,6 @@
           // desktop: ensure clean state
           if (panel) panel.style.transform = "";
           hideBackdrop();
-          hideFab();
-        } else {
-          // mobile: if not open, show FAB
-          if (!isOpen) showFab();
         }
       });
 
@@ -1539,15 +1628,12 @@
 
     function showBackdrop() { if (backdrop) backdrop.classList.remove("hidden"); }
     function hideBackdrop() { if (backdrop) backdrop.classList.add("hidden"); }
-    function showFab() { if (fab) fab.classList.remove("hidden"); }
-    function hideFab() { if (fab) fab.classList.add("hidden"); }
 
     function open() {
       if (!mobile()) return;        // desktop: nothing to do
       isOpen = true;
       panel.classList.add("open");
       showBackdrop();
-      hideFab();
       clearUnread();
       // focus the input so typing is instant — one tap to text
       setTimeout(function () { try { input.focus({ preventScroll: true }); } catch (e) {} }, 280);
@@ -1560,9 +1646,6 @@
       panel.classList.remove("dragging");
       panel.style.transform = "";
       hideBackdrop();
-      // re-show the FAB (idle style until new activity)
-      showFab();
-      fab.classList.add("idle");
       if (idleTO) { clearTimeout(idleTO); idleTO = null; }
       try { input.blur(); } catch (e) {}
     }
@@ -1577,40 +1660,38 @@
         badge.textContent = unread > 99 ? "99+" : String(unread);
         badge.classList.remove("hidden");
       }
-      // a new message makes the FAB pulse again to draw the eye
-      if (fab) fab.classList.remove("idle");
     }
     function clearUnread() {
       unread = 0;
       if (badge) badge.classList.add("hidden");
     }
 
-    // edge-swipe: drag the panel by its leading knob to dismiss it
+    // drag handle: drag the sheet down by its top knob to dismiss it
     function wireSwipe() {
       if (!panel) return;
       var knob = $("chat-swipe");
-      var start = null, width = 0, dragging = false;
+      var start = null, height = 0, dragging = false;
 
-      function begin(clientX) {
+      function begin(clientY) {
         if (!isOpen) return;
-        width = panel.getBoundingClientRect().width;
-        start = clientX;
+        height = panel.getBoundingClientRect().height;
+        start = clientY;
         dragging = true;
         panel.classList.add("dragging");
       }
-      function move(clientX) {
+      function move(clientY) {
         if (!dragging) return;
-        var dx = Math.max(0, clientX - start);   // only allow dragging rightward
-        panel.style.transform = "translateX(" + dx + "px)";
+        var dy = Math.max(0, clientY - start);   // only allow dragging downward
+        panel.style.transform = "translateY(" + dy + "px)";
       }
       function end() {
         if (!dragging) return;
         dragging = false;
         panel.classList.remove("dragging");
-        var cur = panel.getBoundingClientRect().left;
-        var openLeft = (window.innerWidth - width);
+        var cur = panel.getBoundingClientRect().top;
+        var openTop = window.innerHeight - height;
         // if dragged more than ~35% of the way shut, close
-        if (cur - openLeft > width * 0.35) {
+        if (cur - openTop > height * 0.35) {
           panel.style.transform = "";
           close();
         } else {
@@ -1620,24 +1701,23 @@
 
       if (knob) {
         knob.addEventListener("touchstart", function (e) {
-          begin(e.touches[0].clientX);
+          begin(e.touches[0].clientY);
         }, { passive: true });
         knob.addEventListener("touchmove", function (e) {
-          move(e.touches[0].clientX);
+          move(e.touches[0].clientY);
         }, { passive: true });
         knob.addEventListener("touchend", end);
         // mouse support (desktop testing of mobile width)
-        knob.addEventListener("mousedown", function (e) { begin(e.clientX); });
+        knob.addEventListener("mousedown", function (e) { begin(e.clientY); });
       }
-      window.addEventListener("mousemove", function (e) { if (dragging) move(e.clientX); });
+      window.addEventListener("mousemove", function (e) { if (dragging) move(e.clientY); });
       window.addEventListener("mouseup", function () { if (dragging) end(); });
-      window.addEventListener("touchmove", function (e) { if (dragging) move(e.touches[0].clientX); }, { passive: true });
+      window.addEventListener("touchmove", function (e) { if (dragging) move(e.touches[0].clientY); }, { passive: true });
       window.addEventListener("touchend", function () { if (dragging) end(); });
     }
 
     function showInitial() {
-      // on mobile, reveal the FAB once we're in a room
-      if (mobile()) showFab(); else hideFab();
+      // nothing to show now that the FAB is gone — kept for API compatibility
     }
 
     return {
@@ -1742,7 +1822,29 @@
     // body
     var body = document.createElement("div");
     body.className = "body";
-    body.textContent = opts.text;     // textContent = safe (no HTML injection)
+    if (opts.kind === "sticker" && opts.sticker) {
+      // sticker message: render a glyph or image instead of text.
+      body.classList.add("sticker-msg");
+      if (opts.sticker.emoji) {
+        var sp = document.createElement("span");
+        sp.className = "sticker-emoji";
+        sp.textContent = opts.sticker.emoji;   // textContent = safe
+        body.appendChild(sp);
+        // keep a hidden text twin so copy/search/reply-preview still see it
+        opts.text = opts.sticker.emoji;
+      } else if (opts.sticker.img) {
+        var im = document.createElement("img");
+        im.className = "sticker-img";
+        im.src = opts.sticker.img;
+        im.alt = "sticker";
+        im.loading = "lazy";
+        // hint text used by reply previews / toasts
+        opts.text = "🖼️ sticker";
+        body.appendChild(im);
+      }
+    } else {
+      body.textContent = opts.text;     // textContent = safe (no HTML injection)
+    }
     content.appendChild(body);
 
     // reactions row (filled by applyReaction)
@@ -1925,6 +2027,8 @@
     if (opts.reply) payload.reply = opts.reply;
     broadcast(payload);
     setReply(null);   // clear reply target after sending
+    // mirror our own message into the fullscreen overlay
+    try { FsChat.onNewMessage({ name: state.name, text: text }); } catch (e) {}
   }
 
   function wireChat() {
@@ -1970,6 +2074,7 @@
      Settings sheet + data chip wiring
      ============================================================ */
   function openSettings() {
+    document.body.classList.add("sheet-open");
     $("settings-backdrop").classList.remove("hidden");
     $("settings-sheet").classList.remove("hidden");
     DataMeter.render();
@@ -1979,6 +2084,7 @@
   function closeSettings() {
     $("settings-backdrop").classList.add("hidden");
     $("settings-sheet").classList.add("hidden");
+    document.body.classList.remove("sheet-open");
   }
   function wireSettings() {
     $("settings-btn").addEventListener("click", openSettings);
@@ -1999,6 +2105,34 @@
       renderNetInfo();
       toast("Data Saver " + (tog.checked ? "on — syncing less often." : "off."), tog.checked ? "ok" : "");
     });
+
+    // doodle bar visibility toggle
+    var dbTog = $("doodlebar-toggle");
+    if (dbTog) {
+      dbTog.checked = DoodleBar.ON;
+      dbTog.addEventListener("change", function () {
+        DoodleBar.set(dbTog.checked);
+        toast("Doodle toolbar " + (dbTog.checked ? "shown." : "hidden."), dbTog.checked ? "ok" : "");
+      });
+    }
+
+    // ---- Chat opacity (fullscreen) — two range sliders, live ----
+    var op = ChatOpacity.load();
+    var textSlider = $("fs-text-op");
+    var bgSlider = $("fs-bg-op");
+    var textVal = $("fs-text-op-val");
+    var bgVal = $("fs-bg-op-val");
+    textSlider.value = op.text;
+    bgSlider.value = op.bg;
+    textVal.textContent = op.text + "%";
+    bgVal.textContent = op.bg + "%";
+    var syncOpacity = function () {
+      ChatOpacity.set(textSlider.value, bgSlider.value);
+      textVal.textContent = ChatOpacity.text + "%";
+      bgVal.textContent = ChatOpacity.bg + "%";
+    };
+    textSlider.addEventListener("input", syncOpacity);
+    bgSlider.addEventListener("input", syncOpacity);
 
     // react to live network changes (e.g. switch wifi -> cellular)
     var c = getConnection();
@@ -2078,6 +2212,16 @@
       toast("Local TURN saved! (takes effect on next connection)", "ok");
       probeLocalTurn();
     });
+
+    // ---- Tenor sticker API key ----
+    Stickers.loadKey();
+    var tenorIn = $("tenor-key");
+    if (tenorIn) tenorIn.value = Stickers.getKey();
+    $("tenor-save").addEventListener("click", function () {
+      var k = (tenorIn.value || "").trim();
+      Stickers.saveKey(k);
+      toast(k ? "Tenor key saved — search tab unlocked." : "Tenor key cleared.", k ? "ok" : "");
+    });
   }
 
   /* ============================================================
@@ -2116,6 +2260,39 @@
 
     /* ---- Fullscreen ---- */
     $("fullscreen-btn").addEventListener("click", toggleFullscreen);
+
+    /* ---- Draw (doodle mode toggle) ---- */
+    $("draw-action-btn").addEventListener("click", function () { Doodles.toggle(); });
+
+    /* ---- Hide / show the controls tray (action bar + peers) ---- */
+    (function () {
+      var trayToggle = $("tray-toggle");
+      var videoCol = document.querySelector(".video-col");
+      var trayLabel = trayToggle ? trayToggle.querySelector(".tray-label") : null;
+      if (trayToggle && videoCol) {
+        trayToggle.addEventListener("click", function () {
+          var collapsed = videoCol.classList.toggle("tray-collapsed");
+          if (trayLabel) trayLabel.textContent = collapsed ? "Show" : "Hide";
+          trayToggle.setAttribute("aria-label", collapsed ? "Show controls" : "Hide controls");
+          trayToggle.title = collapsed ? "Show controls" : "Hide controls";
+        });
+      }
+    })();
+
+    /* ---- Hide / show the top bar (badges / relay / room code / settings) ---- */
+    (function () {
+      var topToggle = $("topbar-toggle");
+      var room = $("room");
+      var topLabel = topToggle ? topToggle.querySelector(".tray-label") : null;
+      if (topToggle && room) {
+        topToggle.addEventListener("click", function () {
+          var collapsed = room.classList.toggle("topbar-collapsed");
+          if (topLabel) topLabel.textContent = collapsed ? "Show" : "Hide";
+          topToggle.setAttribute("aria-label", collapsed ? "Show top bar" : "Hide top bar");
+          topToggle.title = collapsed ? "Show top bar" : "Hide top bar";
+        });
+      }
+    })();
 
     /* ---- Become host (viewer takeover) ---- */
     $("become-host").addEventListener("click", function () {
@@ -2366,7 +2543,935 @@
       else cssFs(true); // iOS Safari fallback
     }
   }
-  function cssFs(on) { $("video-wrap").classList.toggle("cfs", on); }
+  function cssFs(on) {
+    $("video-wrap").classList.toggle("cfs", on);
+    $("room").classList.toggle("is-fullscreen", on);
+    FsChat.setFs(on);
+  }
+  // React to the browser's own fullscreen changes (Esc key, etc.) so the
+  // overlay's visibility stays in sync even when we didn't initiate the change.
+  document.addEventListener("fullscreenchange", function () {
+    $("room").classList.toggle("is-fullscreen", !!document.fullscreenElement);
+    FsChat.setFs(!!document.fullscreenElement);
+  });
+  document.addEventListener("webkitfullscreenchange", function () {
+    $("room").classList.toggle("is-fullscreen", !!document.webkitFullscreenElement);
+    FsChat.setFs(!!document.webkitFullscreenElement);
+  });
+
+  /* ============================================================
+     FsChat — chat overlay that lives INSIDE #video-wrap so it stays
+     visible in native fullscreen (where the rest of the page is
+     hidden by the browser chrome). Provides:
+       • a right-middle FAB to open the panel
+       • a top toast that auto-fades on each incoming message
+       • a slide-in panel that mirrors #chat-msgs + has its own
+         composer and reply path
+     ============================================================ */
+  var FsChat = (function () {
+    var wrap, btn, panel, msgs, input, form, badge, toastLayer,
+        replyBox, replyName, replyText;
+    var ready = false, inFs = false, open = false;
+    var unread = 0, replyTo = null;
+    var idleTimer = null, IDLE_MS = 3500;
+
+    function ensure() {
+      if (ready) return;
+      wrap = $("video-wrap");
+      btn = $("fs-chat-btn");
+      panel = $("fs-chat-panel");
+      msgs = $("fs-chat-msgs");
+      input = $("fs-chat-input");
+      form = $("fs-chat-form");
+      badge = $("fs-chat-badge");
+      toastLayer = $("fs-toast-layer");
+      replyBox = $("fs-reply-preview");
+      replyName = $("fs-reply-name");
+      replyText = $("fs-reply-text");
+
+      btn.addEventListener("click", function () { toggle(); bumpIdle(); });
+      $("fs-chat-close").addEventListener("click", close);
+      $("fs-reply-cancel").addEventListener("click", function () { setReply(null); });
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var v = input.value;
+        input.value = "";
+        // route through the existing sendChat so it broadcasts + renders
+        // in the main list (and therefore gets cloned back here).
+        try {
+          // preserve any in-flight reply target set in the main composer
+          sendChatWithReply(v, replyTo);
+        } catch (err) { sendChat(v); }
+        setReply(null);
+        bumpIdle();
+      });
+
+      // any pointer/keyboard activity over the wrap postpones the auto-hide
+      ["mousemove", "touchstart", "pointerdown", "keydown"].forEach(function (ev) {
+        wrap.addEventListener(ev, bumpIdle, { passive: true });
+      });
+
+      ready = true;
+    }
+
+    // sendChat always clears REPLY_TO; to send a reply from the FS panel we
+    // temporarily set REPLY_TO first, then call sendChat.
+    function sendChatWithReply(text, reply) {
+      if (reply) setMainReply(reply);
+      sendChat(text);
+    }
+    function setMainReply(target) {
+      try {
+        if (target) { REPLY_TO = { name: target.name, text: target.text }; syncMainReplyPreview(); }
+        else { REPLY_TO = null; syncMainReplyPreview(); }
+      } catch (e) {}
+    }
+    function syncMainReplyPreview() {
+      // mirror REPLY_TO into the main reply-preview UI
+      try {
+        var box = $("reply-preview");
+        if (!REPLY_TO) { box.classList.add("hidden"); return; }
+        box.classList.remove("hidden");
+        $("reply-preview-name").textContent = REPLY_TO.name + "";
+        $("reply-preview-text").textContent = (REPLY_TO.text || "").slice(0, 80);
+      } catch (e) {}
+    }
+
+    function setFs(on) {
+      ensure();
+      inFs = on;
+      wrap.classList.toggle("fschat-on", on);
+      if (on) {
+        btn.hidden = false;
+        bumpIdle();
+      } else {
+        // leaving fullscreen: tear down
+        close();
+        btn.hidden = true;
+        wrap.classList.remove("fschat-idle");
+        clearToasts();
+        clearUnread();
+      }
+    }
+
+    function bumpIdle() {
+      if (!inFs) return;
+      wrap.classList.remove("fschat-idle");
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(function tick() {
+        // don't auto-hide while the panel is open or input is focused
+        if (open) return;
+        if (document.activeElement === input) { idleTimer = setTimeout(tick, IDLE_MS); return; }
+        wrap.classList.add("fschat-idle");
+      }, IDLE_MS);
+    }
+
+    function openPanel() {
+      ensure();
+      open = true;
+      panel.hidden = false;
+      panel.classList.add("open");
+      clearUnread();
+      syncFromMain();
+      wrap.classList.remove("fschat-idle");
+      setTimeout(function () { try { input.focus({ preventScroll: true }); } catch (e) {} }, 240);
+    }
+    function close() {
+      if (!open) return;
+      open = false;
+      panel.classList.remove("open");
+      try { input.blur(); } catch (e) {}
+      setTimeout(function () { if (!open) panel.hidden = true; }, 280);
+    }
+    function toggle() { if (open) close(); else openPanel(); }
+
+    // clone the current main chat list into the FS panel
+    function syncFromMain() {
+      var main = $("chat-msgs");
+      msgs.innerHTML = "";
+      var kids = main.children;
+      for (var i = 0; i < kids.length; i++) {
+        var clone = cloneMsg(kids[i]);
+        if (clone) msgs.appendChild(clone);
+      }
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    // deep-clone a .msg node, stripping interactivity (reaction picker,
+    // reply handlers) so the clone is read-only display.
+    function cloneMsg(node) {
+      if (!node) return null;
+      var c = node.cloneNode(true);
+      // remove interactive bits that don't belong in the overlay
+      var rm = c.querySelectorAll(".msg-react-btn, .react-picker-open, .react-picker");
+      for (var i = 0; i < rm.length; i++) rm[i].parentNode && rm[i].parentNode.removeChild(rm[i]);
+      return c;
+    }
+
+    // Called after every new message lands in the main list. We clone it
+    // into the FS panel and, if the panel is closed, pop a toast.
+    function onNewMessage(opts) {
+      if (!inFs) return;
+      // append the latest message to the panel
+      var main = $("chat-msgs");
+      if (main.lastElementChild) {
+        var clone = cloneMsg(main.lastElementChild);
+        if (clone) {
+          msgs.appendChild(clone);
+          while (msgs.children.length > 200) msgs.removeChild(msgs.firstChild);
+          if (open) msgs.scrollTop = msgs.scrollHeight;
+        }
+      }
+      // toast only for OTHER people's messages, and only when panel is closed
+      var mine = (opts && opts.name === state.name);
+      if (!mine && !open) {
+        unread++;
+        if (badge) {
+          badge.textContent = unread > 99 ? "99+" : String(unread);
+          badge.classList.remove("hidden");
+        }
+        showToast(opts.name || "Someone", opts.text || "");
+        // a new message is activity — reveal the FAB briefly
+        wrap.classList.remove("fschat-idle");
+        bumpIdle();
+      }
+    }
+
+    function showToast(name, text) {
+      var t = document.createElement("div");
+      t.className = "fs-toast";
+      var n = document.createElement("span"); n.className = "fs-toast-name"; n.textContent = name;
+      var x = document.createElement("span"); x.className = "fs-toast-text"; x.textContent = text;
+      t.appendChild(n); t.appendChild(x);
+      toastLayer.appendChild(t);
+      // cap stack
+      while (toastLayer.children.length > 4) toastLayer.removeChild(toastLayer.firstChild);
+      // reveal
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { t.classList.add("show"); });
+      });
+      // auto-fade
+      setTimeout(function () {
+        t.classList.remove("show");
+        setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 300);
+      }, 3200);
+    }
+    function clearToasts() { if (toastLayer) toastLayer.innerHTML = ""; }
+
+    function clearUnread() {
+      unread = 0;
+      if (badge) badge.classList.add("hidden");
+    }
+
+    // reply path: clicking a cloned message sets the reply target
+    function setReply(target) {
+      replyTo = target;
+      if (!target) {
+        replyBox.classList.add("hidden");
+        return;
+      }
+      replyBox.classList.remove("hidden");
+      replyName.textContent = target.name + "";
+      replyText.textContent = (target.text || "").slice(0, 80);
+      try { input.focus({ preventScroll: true }); } catch (e) {}
+    }
+
+    // wire delegated clicks on the cloned message list: tap a bubble to reply
+    function wireMsgList() {
+      msgs.addEventListener("click", function (e) {
+        var msg = e.target.closest(".msg");
+        if (!msg || msg.classList.contains("sys")) return;
+        if (e.target.closest(".react-chip")) return;
+        var who = msg.querySelector(".meta .who");
+        var body = msg.querySelector(".body");
+        if (!who || !body) return;
+        setReply({ name: who.textContent, text: body.textContent });
+      });
+    }
+
+    return {
+      setFs: setFs,
+      onNewMessage: onNewMessage,
+      isOpen: function () { return open; },
+      init: function () { ensure(); wireMsgList(); }
+    };
+  })();
+
+  /* ============================================================
+     Doodles — freehand strokes drawn over the whole screen.
+     Lives inside #video-wrap so it survives native + iOS-CSS
+     fullscreen. Strokes auto-fade after 7s. Points stream live
+     to peers (throttled ~50ms). Rides the existing PeerJS data
+     channel via { t:"doodle", op, id, name, color, x, y, pts }.
+     ============================================================ */
+  var Doodles = (function () {
+    var canvas, ctx, wrap, bar, colorDot, sizeInput, sizeDot, hideBtn;
+    var DPR = 1;                    // device pixel ratio for crisp strokes
+    var strokes = [];               // active/recent strokes: { id, color, w, pts:[{x,y}], born, done }
+    var drawing = false;            // is the user's finger/pen currently down?
+    var cur = null;                 // the stroke currently being drawn (local)
+    var mode = false;               // is draw mode on (canvas capturing input)?
+    var raf = 0;                    // current rAF handle (0 = loop stopped)
+    var lastFlush = 0;              // ts of last streamed point batch
+    var FLUSH_MS = 50;              // throttle for live point streaming
+    var LIFE_MS = 7000;             // total stroke lifetime
+    var FADE_MS = 2000;             // ramp 1 -> 0 over the last 2s
+    var lineW = 3;                  // current brush width in CSS px
+    var userColor = null;           // if set, overrides colorForName(name)
+    var colorInput = null;          // hidden <input type=color> for the swatch
+    var barCollapsed = false;       // user-collapsed the draw toolbar?
+
+    // pick the active stroke color: user override beats name-based default
+    function activeColor() {
+      return userColor || colorForName(state.name);
+    }
+
+    function $(id) { return document.getElementById(id); }
+
+    // translate a pointer event into canvas-space (CSS px, 0..W/H)
+    function ptOf(e) {
+      return { x: e.clientX, y: e.clientY };
+    }
+
+    // (re)size the canvas backing store to the viewport; cheap, runs
+    // on init + resize + mode toggle.
+    function fit() {
+      if (!canvas) return;
+      DPR = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5));
+      var w = window.innerWidth, h = window.innerHeight;
+      canvas.width = Math.round(w * DPR);
+      canvas.height = Math.round(h * DPR);
+      canvas.style.width = w + "px";
+      canvas.style.height = h + "px";
+      if (ctx) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); requestDraw(); }
+    }
+
+    // ---- redraw loop: only runs while there are strokes on screen ----
+    function requestDraw() {
+      if (raf) return;
+      raf = requestAnimationFrame(loop);
+    }
+    function loop() {
+      raf = 0;
+      render();
+      // keep looping only while something still needs painting
+      if (strokes.length) requestDraw();
+    }
+    function render() {
+      if (!ctx) return;
+      var w = canvas.width / DPR, h = canvas.height / DPR;
+      ctx.clearRect(0, 0, w, h);
+      var now = Date.now();
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      for (var i = 0; i < strokes.length; i++) {
+        var s = strokes[i];
+        var age = now - s.born;
+        var alpha;
+        if (age >= LIFE_MS) { strokes.splice(i, 1); i--; continue; }
+        if (age > LIFE_MS - FADE_MS) {
+          alpha = (LIFE_MS - age) / FADE_MS;     // 1 -> 0 over the tail
+        } else {
+          alpha = 1;
+        }
+        if (alpha <= 0) { strokes.splice(i, 1); i--; continue; }
+        var pts = s.pts;
+        if (pts.length < 1) continue;
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = s.w || lineW;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        if (pts.length === 1) {
+          // single dot — draw a small round cap so a tap still shows
+          ctx.lineTo(pts[0].x + 0.1, pts[0].y + 0.1);
+        } else {
+          for (var j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // ---- pointer handlers (attached to canvas, active only in mode) ----
+    function onDown(e) {
+      if (!mode) return;
+      e.preventDefault();
+      canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+      drawing = true;
+      var p = ptOf(e);
+      var col = activeColor();
+      // _sent counts points already streamed to peers — starts at 1 because
+      // the start message carries the first point. Without it the flush math
+      // below computes slice(pts.length - undefined) and ships nothing.
+      cur = { id: newStrokeId(), color: col, w: lineW, pts: [p], born: Date.now(), done: false, _sent: 1 };
+      strokes.push(cur);
+      requestDraw();
+      broadcast({ t: "doodle", op: "start", id: cur.id, name: state.name, color: col, w: lineW, x: p.x, y: p.y });
+      lastFlush = Date.now();
+    }
+    function onMove(e) {
+      if (!mode || !drawing || !cur) return;
+      e.preventDefault();
+      var p = ptOf(e);
+      cur.pts.push(p);
+      requestDraw();
+      var now = Date.now();
+      if (now - lastFlush >= FLUSH_MS) {
+        // send only the points added since the last flush to keep messages small
+        var batch = cur.pts.slice(cur._sent);
+        broadcast({ t: "doodle", op: "pt", id: cur.id, pts: batch });
+        cur._sent = cur.pts.length;
+        lastFlush = now;
+      }
+    }
+    function onUp(e) {
+      if (!mode || !drawing || !cur) return;
+      e.preventDefault();
+      drawing = false;
+      cur.done = true;
+      // flush any trailing points not yet streamed
+      if (cur._sent < cur.pts.length) {
+        var batch = cur.pts.slice(cur._sent);
+        broadcast({ t: "doodle", op: "pt", id: cur.id, pts: batch });
+        cur._sent = cur.pts.length;
+      }
+      broadcast({ t: "doodle", op: "end", id: cur.id });
+      cur = null;
+    }
+
+    var strokeSeq = 0;
+    function newStrokeId() {
+      strokeSeq = (strokeSeq + 1) >>> 0;
+      // include the peer id suffix so two peers can't collide on ids
+      return (state.peer && state.peer.id ? state.peer.id.slice(-4) : "self") + "-" + strokeSeq;
+    }
+
+    // ---- incoming remote doodle messages ----
+    function onRemote(data) {
+      if (!data || !data.op) return;
+      var id = data.id;
+      if (data.op === "clear") { strokes = []; requestDraw(); return; }
+      if (data.op === "start") {
+        // recolor from the sender's name so a peer can't spoof colors
+        var color = colorForName(data.name || "Someone");
+        strokes.push({ id: id, color: color, w: data.w || 3, pts: [{ x: data.x, y: data.y }], born: Date.now(), done: false, _sent: 1 });
+        requestDraw();
+        return;
+      }
+      if (data.op === "pt") {
+        var s = findStroke(id);
+        if (s && data.pts && data.pts.length) {
+          for (var i = 0; i < data.pts.length; i++) s.pts.push(data.pts[i]);
+          requestDraw();
+        }
+        return;
+      }
+      if (data.op === "end") {
+        var s2 = findStroke(id);
+        if (s2) s2.done = true;
+        return;
+      }
+    }
+    function findStroke(id) {
+      for (var i = strokes.length - 1; i >= 0; i--) if (strokes[i].id === id) return strokes[i];
+      return null;
+    }
+
+    // ---- mode toggle (button press) ----
+    function setMode(on) {
+      mode = on;
+      if (!wrap) return;
+      wrap.classList.toggle("draw-on", mode);
+      // bar visibility: use DoodleBar setting (respects both draw mode + user pref)
+      try { applyDoodleBarVisibility(); } catch (e) {}
+      // restore an expanded bar whenever (re)entering draw mode so the
+      // user isn't stuck with a collapsed pill from a previous session.
+      if (on && barCollapsed) setBarCollapsed(false);
+      // keep both composer buttons in sync (normal + fullscreen)
+      setBtns(mode);
+      // keep the action-bar Draw button highlighted when drawing is active
+      var drawBtn = $("draw-action-btn");
+      if (drawBtn) drawBtn.classList.toggle("act-btn-accent", mode);
+      if (mode) {
+        fit();              // ensure crisp sizing when entering
+        if (colorDot) colorDot.style.background = activeColor();
+      } else {
+        // exiting mid-stroke: finalize cleanly
+        drawing = false; cur = null;
+      }
+    }
+    function toggle() { setMode(!mode); }
+
+    // ---- collapse the draw toolbar: the bottom-left #fs-hidebar-btn hides
+    //      the whole doodle bar; the button itself stays so it can re-expand. ----
+    function setBarCollapsed(on) {
+      barCollapsed = !!on;
+      if (!bar || !wrap) return;
+      bar.classList.toggle("collapsed", barCollapsed);
+      wrap.classList.toggle("draw-collapsed", barCollapsed);
+      if (hideBtn) hideBtn.setAttribute("aria-expanded", barCollapsed ? "false" : "true");
+      if (hideBtn) hideBtn.title = barCollapsed ? "Show toolbar" : "Hide toolbar";
+    }
+    function toggleBar() { setBarCollapsed(!barCollapsed); }
+
+    function setBtns(on) {
+      var b1 = $("doodle-btn"), b2 = $("fs-doodle-btn");
+      if (b1) { b1.setAttribute("aria-pressed", on ? "true" : "false"); }
+      if (b2) { b2.setAttribute("aria-pressed", on ? "true" : "false"); }
+    }
+
+    function clearAll() {
+      strokes = [];
+      cur = null; drawing = false;
+      requestDraw();
+      broadcast({ t: "doodle", op: "clear" });
+    }
+
+    // ---- color picker: swatch click opens the native color input ----
+    function syncColorDot() {
+      if (colorDot) colorDot.style.background = activeColor();
+      if (colorInput) colorInput.value = activeColor();
+    }
+    function setColor(c) {
+      if (!c) return;
+      userColor = c;
+      syncColorDot();
+    }
+    function openColorPicker() {
+      // the hidden <input type=color> (see index.html) drives the OS picker
+      if (colorInput) colorInput.click();
+    }
+    function clearColor() {
+      userColor = null;
+      syncColorDot();
+    }
+
+    // ---- brush size: slider drives lineW + a live dot preview ----
+    function syncSizeDot() {
+      if (!sizeDot) return;
+      // cap the preview so big sizes don't overflow the 16px well
+      var px = Math.min(14, Math.max(2, lineW));
+      sizeDot.style.setProperty("--doodle-size", px + "px");
+    }
+    function setSize(v) {
+      var n = parseInt(v, 10);
+      if (isNaN(n)) return;
+      lineW = Math.max(1, Math.min(16, n));
+      if (sizeInput) sizeInput.value = String(lineW);
+      syncSizeDot();
+    }
+
+    function init() {
+      canvas = $("doodle-canvas");
+      wrap = $("video-wrap");
+      bar = $("doodle-bar");
+      colorDot = $("doodle-color");
+      colorInput = $("doodle-color-input");
+      sizeInput = $("doodle-size");
+      sizeDot = $("doodle-size-dot");
+      hideBtn = $("fs-hidebar-btn");
+      if (!canvas || !wrap) return;
+      ctx = canvas.getContext("2d");
+      fit();
+      // pointer events: unified mouse/touch/pen
+      canvas.addEventListener("pointerdown", onDown);
+      canvas.addEventListener("pointermove", onMove);
+      canvas.addEventListener("pointerup", onUp);
+      canvas.addEventListener("pointercancel", onUp);
+      canvas.addEventListener("pointerleave", function (e) { if (drawing) onUp(e); });
+      // color swatch -> native color input
+      if (colorDot && colorInput) {
+        colorDot.addEventListener("click", openColorPicker);
+        colorInput.addEventListener("input", function (e) { setColor(e.target.value); });
+      }
+      // brush size slider
+      if (sizeInput) {
+        sizeInput.addEventListener("input", function (e) { setSize(e.target.value); });
+        setSize(sizeInput.value);
+      } else {
+        syncSizeDot();
+      }
+      // collapse toggle (top-left hide button)
+      if (hideBtn) hideBtn.addEventListener("click", toggleBar);
+      // keep the backing store matched to the viewport
+      window.addEventListener("resize", fit);
+      window.addEventListener("orientationchange", fit);
+      // redraw after entering fullscreen (dimensions may change)
+      document.addEventListener("fullscreenchange", fit);
+      document.addEventListener("webkitfullscreenchange", fit);
+      syncColorDot();
+    }
+
+    return {
+      init: init,
+      toggle: toggle,
+      setMode: setMode,
+      clear: clearAll,
+      setColor: setColor,
+      setSize: setSize,
+      openColorPicker: openColorPicker,
+      clearColor: clearColor,
+      onRemote: onRemote,
+      isOn: function () { return mode; }
+    };
+  })();
+
+  /* ============================================================
+     Stickers — emoji, uploaded images, and Tenor search.
+     ------------------------------------------------------------
+     Stickers are sent as ordinary chat messages (kind:"sticker")
+     so they stream over the existing chat channel, render inline
+     in the message list, and react/reply like any other message.
+     A sticker body is one of:
+       { emoji: "🎉" }              — a glyph rendered large
+       { img:  "data:..."|"https:..." } — a raster sticker
+     The picker sheet has three tabs:
+       Emoji  — built-in curated pack (no network needed)
+       Mine   — uploads from this device (downscaled, room-synced
+                automatically because they ship as the chat body)
+       Tenor  — searchable GIF stickers (needs a free API key set
+                in Settings); we send the tiny preview URL only.
+     ============================================================ */
+  var Stickers = (function () {
+    var sheet, backdrop;            // picker sheet + scrim
+    var tabsEl, grid;               // tab strip + thumbnail grid
+    var searchRow, searchInput;     // Tenor search box
+    var addBtn, fileInput;          // Mine: add-from-device
+    var hintEl;                     // small caption under the tabs
+    var tenorTab;                   // the Tenor tab button (hidden unless key set)
+
+    var library = [];               // [{ id, src }] user uploads (session)
+    var seq = 0;
+    var curTab = "emoji";
+
+    var MAX = 160;                  // upload downscale cap (px)
+    var QUAL = 0.8;                 // JPEG quality for uploads
+    var KEY_STORE = "wp-tenor-key"; // localStorage slot for the API key
+    var tenorKey = "";              // current Tenor key ("") = disabled
+    var tenorBusy = false;
+    var tenorLastQ = "";
+
+    // ---- built-in emoji pack (curated, no network) ----
+    // A compact, broadly-supported set grouped by vibe. Rendered as text
+    // so they cost zero bytes and look native everywhere.
+    var EMOJI_PACK = [
+      "😀","😂","🤣","😊","😍","🥰","😘","😎","🤩","🥳",
+      "😜","🤪","🤔","🤨","😐","😴","😭","😡","🤯","😱",
+      "👍","👎","👏","🙌","🙏","💪","🤝","✌️","🤞","👋",
+      "❤️","🧡","💛","💚","💙","💜","🖤","💔","💖","🔥",
+      "🎉","🎊","✨","⭐","🌟","💫","💯","✅","❌","⚠️",
+      "👀","🤡","👻","💀","🤖","👽","🎃","💩","🐱","🐶",
+      "🍕","🍔","🍟","🍿","🍰","🥤","🍺","🍷","☕","🍫",
+      "⚽","🏀","🎮","🎵","🎬","📷","🎁","💎","🚀","🌈"
+    ];
+
+    function $(id) { return document.getElementById(id); }
+    function newId() { seq = (seq + 1) >>> 0; return "st" + seq; }
+
+    // ---- Tenor key persistence (mirrors LocalTurn conventions) ----
+    function loadKey() {
+      try { tenorKey = localStorage.getItem(KEY_STORE) || ""; } catch (e) { tenorKey = ""; }
+      return tenorKey;
+    }
+    function saveKey(k) {
+      tenorKey = (k || "").trim();
+      try {
+        if (tenorKey) localStorage.setItem(KEY_STORE, tenorKey);
+        else localStorage.removeItem(KEY_STORE);
+      } catch (e) {}
+      applyTenorVisibility();
+    }
+    function hasTenor() { return !!tenorKey; }
+
+    // show/hide the Tenor tab + its search row based on key presence
+    function applyTenorVisibility() {
+      if (tenorTab) tenorTab.classList.toggle("hidden", !hasTenor());
+      // if we were on the Tenor tab and lost the key, fall back to Emoji
+      if (curTab === "tenor" && !hasTenor()) setTab("emoji");
+    }
+
+    // ---- picker open/close (mirrors the Settings sheet convention) ----
+    var _wasDrawing = false;
+    function openPicker() {
+      if (!sheet) return;
+      // if draw mode is active, pause it so the sheet isn't blocked by
+      // the canvas (which sits at z-index 9999)
+      try {
+        if (typeof Doodles !== "undefined" && Doodles.isOn()) {
+          _wasDrawing = true;
+          Doodles.setMode(false);
+        }
+      } catch (e) {}
+      backdrop.classList.remove("hidden");
+      sheet.classList.remove("hidden");
+      renderTab();
+    }
+    function closePicker() {
+      if (!sheet) return;
+      backdrop.classList.add("hidden");
+      sheet.classList.add("hidden");
+      if (_wasDrawing) {
+        _wasDrawing = false;
+        try { Doodles.setMode(true); } catch (e) {}
+      }
+    }
+
+    // ---- tab switching ----
+    function setTab(name) {
+      curTab = name;
+      // sync the tab strip ARIA/state
+      if (tabsEl) {
+        var btns = tabsEl.querySelectorAll(".sticker-tab");
+        for (var i = 0; i < btns.length; i++) {
+          var on = btns[i].getAttribute("data-tab") === name;
+          btns[i].classList.toggle("active", on);
+          btns[i].setAttribute("aria-selected", on ? "true" : "false");
+        }
+      }
+      // toggle the per-tab affordances
+      if (searchRow) searchRow.classList.toggle("hidden", name !== "tenor");
+      if (addBtn) addBtn.classList.toggle("hidden", name !== "mine");
+      renderTab();
+    }
+
+    function renderTab() {
+      if (!grid) return;
+      if (curTab === "emoji") renderEmoji();
+      else if (curTab === "mine") renderMine();
+      else if (curTab === "tenor") renderTenor(null);
+    }
+
+    function setHint(text) {
+      if (hintEl) hintEl.textContent = text;
+    }
+
+    // ---- Emoji tab ----
+    function renderEmoji() {
+      setHint("Tap an emoji to send it in chat.");
+      grid.innerHTML = "";
+      for (var i = 0; i < EMOJI_PACK.length; i++) {
+        (function (ch) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "sticker-thumb sticker-thumb-emoji";
+          b.textContent = ch;
+          b.title = "Send " + ch;
+          b.addEventListener("click", function () {
+            send({ emoji: ch });
+            closePicker();
+          });
+          grid.appendChild(b);
+        })(EMOJI_PACK[i]);
+      }
+    }
+
+    // ---- Mine tab (uploads) ----
+    function renderMine() {
+      setHint(library.length
+        ? "Tap a sticker to send it. Added stickers sync to everyone in the room."
+        : "Add stickers from your device — they sync to the whole room when you send one.");
+      grid.innerHTML = "";
+      if (!library.length) {
+        var e = document.createElement("div");
+        e.className = "sticker-empty";
+        e.textContent = "No stickers yet — add some from your device.";
+        grid.appendChild(e);
+        return;
+      }
+      for (var i = 0; i < library.length; i++) {
+        (function (s) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "sticker-thumb";
+          b.title = "Send sticker";
+          var im = document.createElement("img");
+          im.src = s.src; im.alt = ""; im.loading = "lazy";
+          b.appendChild(im);
+          b.addEventListener("click", function () {
+            send({ img: s.src });
+            closePicker();
+          });
+          grid.appendChild(b);
+        })(library[i]);
+      }
+    }
+
+    // ---- Tenor tab ----
+    // We query Tenor's v2 search endpoint with the user's key and render
+    // tiny preview GIFs. Sending ships only the preview URL, so peers
+    // fetch the same small asset (no P2P blob transfer needed).
+    function renderTenor(list) {
+      setHint(hasTenor()
+        ? "Search Tenor for a sticker. Only the preview image is shared."
+        : "Add a free Tenor API key in Settings to unlock search.");
+      grid.innerHTML = "";
+      if (!hasTenor()) {
+        var n = document.createElement("div");
+        n.className = "sticker-empty";
+        n.textContent = "Add a Tenor API key in Settings to search stickers.";
+        grid.appendChild(n);
+        return;
+      }
+      if (!list) {
+        var e = document.createElement("div");
+        e.className = "sticker-empty";
+        e.textContent = "Type a search above to find stickers.";
+        grid.appendChild(e);
+        return;
+      }
+      if (!list.length) {
+        var z = document.createElement("div");
+        z.className = "sticker-empty";
+        z.textContent = "No stickers found — try another search.";
+        grid.appendChild(z);
+        return;
+      }
+      for (var i = 0; i < list.length; i++) {
+        (function (item) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "sticker-thumb";
+          b.title = "Send sticker";
+          var im = document.createElement("img");
+          im.src = item.url; im.alt = ""; im.loading = "lazy";
+          b.appendChild(im);
+          b.addEventListener("click", function () {
+            send({ img: item.url, w: item.w, h: item.h });
+            closePicker();
+          });
+          grid.appendChild(b);
+        })(list[i]);
+      }
+    }
+
+    function searchTenor(q) {
+      q = (q || "").trim();
+      if (!hasTenor()) return;
+      if (!q) { renderTenor(null); return; }
+      if (tenorBusy) return;
+      tenorBusy = true;
+      tenorLastQ = q;
+      setHint("Searching Tenor…");
+      // tenor autocomplete style: return a handful of small previews
+      var url = "https://g.tenor.com/v2/search?q=" + encodeURIComponent(q) +
+        "&key=" + encodeURIComponent(tenorKey) +
+        "&limit=24&media_filter=tiny&contentfilter=medium";
+      fetch(url)
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var results = (j && j.results) || [];
+          var out = [];
+          for (var i = 0; i < results.length; i++) {
+            var m = results[i].media_formats && results[i].media_formats.tiny;
+            if (m && m.url) out.push({ url: m.url, w: m.dims && m.dims[0], h: m.dims && m.dims[1] });
+          }
+          if (tenorLastQ === q) renderTenor(out);
+        })
+        .catch(function () {
+          if (tenorLastQ === q) {
+            grid.innerHTML = "";
+            var e = document.createElement("div");
+            e.className = "sticker-empty";
+            e.textContent = "Search failed — check your API key or network.";
+            grid.appendChild(e);
+          }
+        })
+        .then(function () { tenorBusy = false; }, function () { tenorBusy = false; });
+    }
+
+    // ---- file -> downscaled data URL (mirrors readPfp) ----
+    function addFiles(fileList) {
+      if (!fileList || !fileList.length) return;
+      var pending = 0;
+      var done = function () { pending--; if (pending === 0 && curTab === "mine") renderMine(); };
+      for (var i = 0; i < fileList.length; i++) {
+        var f = fileList[i];
+        if (!f || !/^image\//.test(f.type)) continue;
+        pending++;
+        downscale(f, function (err, src) {
+          if (!err && src) library.push({ id: newId(), src: src });
+          done();
+        });
+      }
+      if (pending === 0) toast("No usable images in that selection.", "err");
+    }
+    function downscale(file, cb) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var img = new Image();
+        img.onload = function () {
+          try {
+            var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+            var w = Math.round(img.width * scale);
+            var h = Math.round(img.height * scale);
+            var c = document.createElement("canvas");
+            c.width = w; c.height = h;
+            c.getContext("2d").drawImage(img, 0, 0, w, h);
+            cb(null, c.toDataURL("image/jpeg", QUAL));
+          } catch (e) { cb(e); }
+        };
+        img.onerror = function () { cb(new Error("bad image")); };
+        img.src = reader.result;
+      };
+      reader.onerror = function () { cb(new Error("read failed")); };
+      reader.readAsDataURL(file);
+    }
+
+    // ---- send a sticker as a chat message ----
+    // Builds the same shape as sendChat() but tagged kind:"sticker", then
+    // renders locally + broadcasts so peers see it via the chat handler.
+    function send(sticker) {
+      if (!sticker || (!sticker.emoji && !sticker.img)) return;
+      var mid = newMid();
+      var opts = {
+        name: state.name,
+        pfp: state.pfp,
+        kind: "sticker",
+        sticker: sticker,
+        mid: mid,
+        reply: REPLY_TO ? { name: REPLY_TO.name, text: (REPLY_TO.text || "").slice(0, 120) } : null
+      };
+      addChat(opts);
+      var payload = { t: "chat", kind: "sticker", name: state.name, pfp: state.pfp, sticker: sticker, mid: mid };
+      if (opts.reply) payload.reply = opts.reply;
+      broadcast(payload);
+      setReply(null);
+      // mirror into the fullscreen overlay
+      try { FsChat.onNewMessage({ name: state.name, text: sticker.emoji || "" }); } catch (e) {}
+    }
+
+    function init() {
+      sheet = $("sticker-sheet");
+      backdrop = $("sticker-backdrop");
+      grid = $("sticker-grid");
+      tabsEl = $("sticker-tabs");
+      searchRow = $("sticker-search-row");
+      searchInput = $("sticker-search");
+      addBtn = $("sticker-add-btn");
+      fileInput = $("sticker-input");
+      hintEl = $("sticker-hint");
+      tenorTab = document.querySelector('.sticker-tab[data-tab="tenor"]');
+      if (!sheet || !fileInput) return;
+      loadKey();
+      applyTenorVisibility();
+    }
+
+    return {
+      init: init,
+      openPicker: openPicker,
+      closePicker: closePicker,
+      addFiles: addFiles,
+      setTab: setTab,
+      searchTenor: searchTenor,
+      send: send,
+      loadKey: loadKey,
+      saveKey: saveKey,
+      hasTenor: hasTenor,
+      getKey: function () { return tenorKey; }
+    };
+  })();
 
   /* ============================================================
      Ping loop (RTT -> latency readout)
@@ -2402,9 +3507,11 @@
     if (player.src && player.src.indexOf("blob:") === 0) URL.revokeObjectURL(player.src);
     player.src = "";
     location.hash = "";
-    // hide the mobile drawer + FAB when leaving
+    // hide the mobile sheet when leaving
     try { ChatDrawer.close(); } catch (e) {}
-    try { $("chat-fab").classList.add("hidden"); } catch (e) {}
+    try { $("chat-act-badge").classList.add("hidden"); } catch (e) {}
+    try { Doodles.setMode(false); Doodles.clear(); } catch (e) {}
+    try { Stickers.closePicker(); } catch (e) {}
     DataMeter.reset();
     MediaMeter.reset();
     setOnline("offline");
@@ -2412,10 +3519,79 @@
   }
 
   /* ============================================================
+     Doodle + sticker button wiring
+     ------------------------------------------------------------
+     The two IIFE modules own their internals; this just hooks the
+     composer tool buttons, the draw-mode toolbar, and the sticker
+     picker sheet to the right module calls.
+     ============================================================ */
+  function wireDoodle() {
+    Doodles.init();
+    // composer toggle buttons (normal + fullscreen chat) -> draw mode
+    var main = $("doodle-btn"), fs = $("fs-doodle-btn");
+    if (main) main.addEventListener("click", function () { Doodles.toggle(); });
+    if (fs) fs.addEventListener("click", function () { Doodles.toggle(); });
+    // draw-mode toolbar
+    var clr = $("doodle-clear-btn"), ex = $("doodle-exit-btn");
+    if (clr) clr.addEventListener("click", function () { Doodles.clear(); });
+    if (ex) ex.addEventListener("click", function () { Doodles.setMode(false); });
+  }
+
+  function wireStickers() {
+    Stickers.init();
+    // composer buttons -> open picker
+    var main = $("sticker-btn"), fs = $("fs-sticker-btn");
+    if (main) main.addEventListener("click", function () { Stickers.openPicker(); });
+    if (fs) fs.addEventListener("click", function () { Stickers.openPicker(); });
+    // picker sheet controls
+    var close = $("sticker-close"), back = $("sticker-backdrop");
+    if (close) close.addEventListener("click", function () { Stickers.closePicker(); });
+    if (back) back.addEventListener("click", function () { Stickers.closePicker(); });
+
+    // tab strip -> switch grids
+    var tabs = document.querySelectorAll(".sticker-tab");
+    for (var i = 0; i < tabs.length; i++) {
+      (function (btn) {
+        btn.addEventListener("click", function () { Stickers.setTab(btn.getAttribute("data-tab")); });
+      })(tabs[i]);
+    }
+
+    // Mine: add-from-device
+    var add = $("sticker-add-btn"), input = $("sticker-input");
+    if (add) add.addEventListener("click", function () { if (input) input.click(); });
+    if (input) input.addEventListener("change", function (e) {
+      Stickers.addFiles(e.target.files);
+      e.target.value = "";
+    });
+
+    // Tenor: live search (debounced)
+    var search = $("sticker-search");
+    if (search) {
+      var to = null;
+      search.addEventListener("input", function (e) {
+        if (to) clearTimeout(to);
+        var v = e.target.value;
+        to = setTimeout(function () { Stickers.searchTenor(v); }, 350);
+      });
+      search.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); if (to) clearTimeout(to); Stickers.searchTenor(e.target.value); }
+      });
+    }
+
+    // Esc closes the picker
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && $("sticker-sheet") && !$("sticker-sheet").classList.contains("hidden")) {
+        Stickers.closePicker();
+      }
+    });
+  }
+
+  /* ============================================================
      Init
      ============================================================ */
   function init() {
     console.log("%c[Watch Party] app.js running, init() reached", "color:#0a0;font-weight:bold");
+    ChatOpacity.load();   // restore fullscreen chat opacity CSS vars early
     initLobby();
     console.log("[Watch Party] lobby wired");
     wirePlayerEvents();
@@ -2424,6 +3600,9 @@
     console.log("[Watch Party] chat wired");
     wireActions();
     console.log("[Watch Party] actions wired");
+    try { FsChat.init(); console.log("[Watch Party] fullscreen chat wired"); } catch (e) { console.warn("FsChat init failed", e); }
+    try { wireDoodle(); console.log("[Watch Party] doodle wired"); } catch (e) { console.warn("Doodle wiring failed", e); }
+    try { wireStickers(); console.log("[Watch Party] stickers wired"); } catch (e) { console.warn("Sticker wiring failed", e); }
     wireSettings();
     console.log("[Watch Party] settings wired");
     updateTurnBadge();   // show initial TURN… state (updates again when fetch settles)

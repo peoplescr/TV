@@ -66,6 +66,11 @@
   <section id="room" class="screen hidden">
     <header class="topbar">
       <div class="topbar-left">
+        <!-- hide/show toggle for the top bar (mirrors the bottom tray toggle) -->
+        <button id="topbar-toggle" class="tray-toggle topbar-toggle" type="button" title="Hide top bar" aria-label="Hide top bar">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z"/></svg>
+          <span class="tray-label">Hide</span>
+        </button>
         <span id="role-badge" class="badge badge-viewer">Viewer</span>
         <span id="online-pill" class="online-pill online-offline" title="Connection status">
           <span class="conn-dot" id="conn-dot"></span><span id="conn-status">Offline</span>
@@ -99,6 +104,14 @@
     <main class="stage">
       <!-- ---------------- video column ---------------- -->
       <div class="video-col">
+        <!-- hide/show toggle for the controls tray (sits above the player) -->
+        <div class="video-toolbar">
+          <button id="tray-toggle" class="tray-toggle" type="button" title="Hide controls" aria-label="Hide controls">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z"/></svg>
+            <span class="tray-label">Hide</span>
+          </button>
+        </div>
+
         <div id="video-wrap" class="video-wrap">
           <video id="player" playsinline controls></video>
 
@@ -117,24 +130,151 @@
             <p id="ve-title">Nothing playing yet</p>
             <p id="ve-sub">Open a video file on your device, or share your screen.</p>
           </div>
+
+          <!-- ========================================================= -->
+          <!--  FULLSCREEN CHAT OVERLAY                                    -->
+          <!--  Only visible while #video-wrap is fullscreen (native or   -->
+          <!--  the iOS CSS fallback). Lets you text without leaving FS.   -->
+          <!-- ========================================================= -->
+
+          <!-- top-left button to collapse the doodle toolbar while drawing -->
+          <button id="fs-hidebar-btn" class="fs-hidebar-btn" type="button" title="Hide toolbar" aria-label="Hide toolbar" aria-expanded="true" hidden>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M3 5h18v2H3V5zm0 6h18v2H3v-2zm0 6h18v2H3v-2z"/></svg>
+          </button>
+
+          <!-- right-middle FAB to open the chat panel -->
+          <button id="fs-chat-btn" class="fs-chat-btn" type="button" title="Open chat" aria-label="Open chat" hidden>
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
+            <span id="fs-chat-badge" class="fs-chat-badge hidden">0</span>
+          </button>
+
+          <!-- auto-fading toast stack for incoming messages -->
+          <div id="fs-toast-layer" class="fs-toast-layer" aria-live="polite" aria-hidden="true"></div>
+
+          <!-- the chat panel itself -->
+          <aside id="fs-chat-panel" class="fs-chat-panel" aria-label="Chat (fullscreen)" hidden>
+            <header class="fs-chat-head">
+              <span class="fs-chat-title">Chat</span>
+              <button id="fs-chat-close" class="fs-chat-close" type="button" title="Close chat" aria-label="Close chat">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+              </button>
+            </header>
+
+            <!-- reply preview (cloned from the main reply preview) -->
+            <div id="fs-reply-preview" class="fs-reply-preview hidden">
+              <div class="fs-reply-line">
+                <span class="fs-reply-arrow">↳</span>
+                <div class="fs-reply-body">
+                  <span class="fs-reply-name" id="fs-reply-name"></span>
+                  <span class="fs-reply-text" id="fs-reply-text"></span>
+                </div>
+              </div>
+              <button id="fs-reply-cancel" class="fs-reply-cancel" type="button" title="Cancel reply" aria-label="Cancel reply">
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+              </button>
+            </div>
+
+            <!-- messages are cloned here from #chat-msgs on open + on each new message -->
+            <div id="fs-chat-msgs" class="fs-chat-msgs"></div>
+
+            <form id="fs-chat-form" class="fs-chat-form">
+              <button id="fs-doodle-btn" class="chat-tool" type="button" title="Doodle" aria-label="Toggle doodle drawing" aria-pressed="false">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+              </button>
+              <button id="fs-sticker-btn" class="chat-tool" type="button" title="Stickers" aria-label="Open sticker picker">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M14.5 2H5a3 3 0 0 0-3 3v14a3 3 0 0 0 3 3h9.5l7.5-7.5V5a3 3 0 0 0-3-3zM5 4h11.5A1.5 1.5 0 0 1 18 5.5V14h-4a2 2 0 0 0-2 2v4H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm9.5 18V16h4l-4 4z"/></svg>
+              </button>
+              <input id="fs-chat-input" type="text" maxlength="500" placeholder="Message…" autocomplete="off" enterkeyhint="send" />
+              <button type="submit" class="fs-chat-send" title="Send" aria-label="Send">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+              </button>
+            </form>
+          </aside>
+
+          <!-- doodle overlay — lives INSIDE #video-wrap so it stays visible in
+               native fullscreen (the Fullscreen API only renders the fullscreened
+               element + descendants; siblings would vanish). position:fixed still
+               covers the whole viewport correctly inside a fullscreen parent. -->
+          <div id="doodle-layer" aria-hidden="true">
+            <canvas id="doodle-canvas"></canvas>
+          </div>
+
+          <!-- slim toolbar shown only while drawing -->
+          <div id="doodle-bar" class="doodle-bar" hidden>
+            <button id="doodle-color" class="doodle-color" type="button" title="Pick stroke color" aria-label="Pick stroke color"></button>
+            <label class="doodle-size-wrap" title="Brush size">
+              <span id="doodle-size-dot" class="doodle-size-dot" aria-hidden="true"></span>
+              <input id="doodle-size" class="doodle-size" type="range" min="1" max="16" step="1" value="3" aria-label="Brush size" />
+            </label>
+            <button id="doodle-clear-btn" class="doodle-bar-btn" type="button" title="Clear doodles" aria-label="Clear doodles">Clear</button>
+            <button id="doodle-exit-btn" class="doodle-bar-btn doodle-bar-exit" type="button" title="Exit drawing" aria-label="Exit drawing">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            </button>
+          </div>
+
+          <!-- sticker picker — lives INSIDE #video-wrap so it renders in
+               native fullscreen (the Fullscreen API only shows the
+               fullscreened element + its descendants). position:fixed still
+               covers the viewport from inside a fullscreen parent. -->
+          <div id="sticker-backdrop" class="sheet-backdrop hidden" aria-hidden="true"></div>
+          <section id="sticker-sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-label="Stickers">
+            <header class="sheet-head">
+              <strong>Stickers</strong>
+              <button id="sticker-close" class="icon-btn icon-btn-sm" title="Close" aria-label="Close">
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+              </button>
+            </header>
+            <div class="sheet-body">
+              <div id="sticker-tabs" class="sticker-tabs" role="tablist">
+                <button class="sticker-tab active" type="button" role="tab" data-tab="emoji" aria-selected="true">Emoji</button>
+                <button class="sticker-tab" type="button" role="tab" data-tab="mine" aria-selected="false">Mine</button>
+                <button class="sticker-tab sticker-tab-tenor hidden" type="button" role="tab" data-tab="tenor" aria-selected="false">Tenor</button>
+              </div>
+              <div id="sticker-search-row" class="sticker-search-row hidden">
+                <input id="sticker-search" type="search" placeholder="Search Tenor stickers…" autocomplete="off" enterkeyhint="search" />
+              </div>
+              <button id="sticker-add-btn" class="btn btn-block sticker-add-row hidden" type="button">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg>
+                Add stickers from file
+              </button>
+              <p id="sticker-hint" class="set-note">Tap a sticker to send it in chat.</p>
+              <div id="sticker-grid" class="sticker-grid">
+                <!-- sticker thumbnails inserted here -->
+              </div>
+            </div>
+          </section>
         </div>
 
         <!-- action bar -->
-        <div class="actions">
+        <div id="actions" class="actions">
           <button id="file-btn" class="act-btn" title="Open a local video file" aria-label="Open file">
-            <span class="act-ico">📁</span><span class="act-label">File</span>
+            <svg class="act-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>
+            <span class="act-label">File</span>
           </button>
           <button id="screen-btn" class="act-btn" title="Share your screen or a tab" aria-label="Share screen">
-            <span class="act-ico">🖥️</span><span class="act-label">Screen</span>
+            <svg class="act-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M21 2H3a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6l-1 3h-2v2h12v-2h-2l-1-3h6a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm0 14H3V4h18v12z"/></svg>
+            <span class="act-label">Screen</span>
           </button>
           <button id="sub-btn" class="act-btn" title="Load subtitles (.srt / .vtt)" aria-label="Subtitles">
-            <span class="act-ico">💬</span><span class="act-label">Subs</span>
+            <svg class="act-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM4 12h4v2H4v-2zm10 6H4v-2h10v2zm6 0h-4v-2h4v2zm0-4H10v-2h10v2z"/></svg>
+            <span class="act-label">Subs</span>
+          </button>
+          <button id="draw-action-btn" class="act-btn" title="Toggle drawing" aria-label="Toggle drawing">
+            <svg class="act-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+            <span class="act-label">Draw</span>
+          </button>
+          <button id="chat-btn" class="act-btn" title="Open chat" aria-label="Open chat">
+            <svg class="act-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
+            <span class="act-label">Chat</span>
+            <span id="chat-act-badge" class="chat-act-badge hidden">0</span>
           </button>
           <button id="fullscreen-btn" class="act-btn" title="Toggle fullscreen" aria-label="Fullscreen">
-            <span class="act-ico">⛶</span><span class="act-label">Full</span>
+            <svg class="act-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+            <span class="act-label">Full</span>
           </button>
           <button id="become-host" class="act-btn act-btn-accent hidden" title="Take over as host" aria-label="Become host">
-            <span class="act-ico">👑</span><span class="act-label">Host</span>
+            <svg class="act-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm0 2h14v2H5v-2z"/></svg>
+            <span class="act-label">Host</span>
           </button>
         </div>
 
@@ -192,6 +332,12 @@
         </div>
 
         <form id="chat-form" class="chat-form">
+          <button id="doodle-btn" class="chat-tool" type="button" title="Doodle" aria-label="Toggle doodle drawing" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          </button>
+          <button id="sticker-btn" class="chat-tool" type="button" title="Stickers" aria-label="Open sticker picker">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M14.5 2H5a3 3 0 0 0-3 3v14a3 3 0 0 0 3 3h9.5l7.5-7.5V5a3 3 0 0 0-3-3zM5 4h11.5A1.5 1.5 0 0 1 18 5.5V14h-4a2 2 0 0 0-2 2v4H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm9.5 18V16h4l-4 4z"/></svg>
+          </button>
           <input id="chat-input" type="text" maxlength="500" placeholder="Message…" autocomplete="off" enterkeyhint="send" />
           <button type="submit" class="chat-send" title="Send" aria-label="Send">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/></svg>
@@ -199,12 +345,6 @@
         </form>
       </aside>
     </main>
-
-    <!-- floating chat button (mobile only) — opens the drawer -->
-    <button id="chat-fab" class="chat-fab hidden" title="Open chat" aria-label="Open chat">
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
-      <span id="chat-fab-badge" class="chat-fab-badge hidden">0</span>
-    </button>
   </section>
 
   <!-- ============================================================= -->
@@ -245,6 +385,46 @@
             <span class="switch-track"><span class="switch-thumb"></span></span>
           </span>
         </label>
+      </div>
+
+      <!-- doodle bar visibility -->
+      <div class="set-block">
+        <label class="set-row">
+          <span class="set-row-text">
+            <strong>Show Doodle Toolbar</strong>
+            <small>Show the color/size/clear bar when drawing</small>
+          </span>
+          <span class="switch">
+            <input type="checkbox" id="doodlebar-toggle" checked />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </span>
+        </label>
+      </div>
+
+      <!-- chat opacity (fullscreen only) -->
+      <div class="set-block">
+        <div class="set-label">Chat Opacity — Fullscreen</div>
+        <div class="range-row">
+          <span class="range-row-text">
+            <strong>Messages</strong>
+            <small>Opacity of chat messages (text &amp; bubbles together)</small>
+          </span>
+          <span class="range-control">
+            <input type="range" id="fs-text-op" class="fs-range" min="0" max="100" value="80" aria-label="Chat message opacity in fullscreen" />
+            <span id="fs-text-op-val" class="range-val">80%</span>
+          </span>
+        </div>
+        <div class="range-row">
+          <span class="range-row-text">
+            <strong>Background</strong>
+            <small>Opacity of the panel behind the messages</small>
+          </span>
+          <span class="range-control">
+            <input type="range" id="fs-bg-op" class="fs-range" min="0" max="100" value="100" aria-label="Chat background opacity in fullscreen" />
+            <span id="fs-bg-op-val" class="range-val">100%</span>
+          </span>
+        </div>
+        <p class="set-note">Only affects the chat overlay while in fullscreen. 0% = invisible, 100% = fully solid.</p>
       </div>
 
       <!-- TURN servers -->
@@ -294,6 +474,19 @@
         </div>
       </div>
 
+      <!-- Stickers: optional Tenor API key for the searchable sticker tab -->
+      <div class="set-block">
+        <div class="set-label">Stickers</div>
+        <p class="set-note" style="margin-top:0">A built-in emoji pack is always available. Add a free Tenor API key to unlock a searchable sticker tab.</p>
+        <div class="local-turn-fields" style="display:block">
+          <div class="ltf-row">
+            <label for="tenor-key">Tenor API key</label>
+            <input id="tenor-key" type="password" placeholder="optional — from tenor.com" autocomplete="off" spellcheck="false" />
+          </div>
+          <button id="tenor-save" class="ltf-save">Save</button>
+        </div>
+      </div>
+
       <!-- TURN relay monitor -->
       <div class="set-block">
         <div class="set-label">Relay Monitor</div>
@@ -322,7 +515,14 @@
     </div>
   </section>
 
-  <!-- toast -->
+  <!-- ============================================================= -->
+  <!--  Sticker picker sheet                                          -->
+  <!-- ============================================================= -->
+  <input id="sticker-input" type="file" accept="image/*" multiple hidden />
+  <!-- off-screen color picker driven by the doodle-bar swatch (kept in layout
+       so .click() reliably opens the OS picker, including on iOS/Safari) -->
+  <input id="doodle-color-input" class="sr-only-color" type="color" value="#22d3ee" />
+
   <div id="toast" class="toast hidden"></div>
 
   <!-- tooltip for iOS camera-share note -->
