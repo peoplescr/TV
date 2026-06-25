@@ -993,28 +993,43 @@
     }, DataSaver.syncMs());   // 4s normally, 8s under Data Saver
   }
 
-  // host-side playback events -> broadcast immediately
+  // Host and viewer-side playback events -> sync to everyone.
+  // The host always broadcasts its own actions. A viewer with permission
+  // sends its action to the host, who relays it to every other viewer
+  // (including applying it to the host's own player).
   function wirePlayerEvents() {
     player.addEventListener("play", function () {
-      if (state.isHost && state.srcType === "file") {
+      if (state.srcType !== "file") return;
+      if (state.isHost) {
         broadcast({ t: "play", time: player.currentTime });
+      } else if (state.adminPerms.allowPlayPause && state.hostConn) {
+        // Viewer with permission: send to host who will relay
+        try { state.hostConn.send({ t: "play", time: player.currentTime }); } catch (e) {}
       }
     });
     player.addEventListener("pause", function () {
-      if (state.isHost && state.srcType === "file") {
+      if (state.srcType !== "file") return;
+      if (state.isHost) {
         broadcast({ t: "pause", time: player.currentTime });
+      } else if (state.adminPerms.allowPlayPause && state.hostConn) {
+        try { state.hostConn.send({ t: "pause", time: player.currentTime }); } catch (e) {}
       }
     });
     var seekTO;
     player.addEventListener("seeked", function () {
-      if (state.isHost && state.srcType === "file") {
+      if (state.srcType !== "file") return;
+      if (state.isHost) {
         clearTimeout(seekTO);
         seekTO = setTimeout(function () {
           broadcast({ t: "seek", time: player.currentTime });
         }, 120);
+      } else if (state.adminPerms.allowSeek && state.hostConn) {
+        clearTimeout(seekTO);
+        seekTO = setTimeout(function () {
+          try { state.hostConn.send({ t: "seek", time: player.currentTime }); } catch (e) {}
+        }, 120);
       }
     });
-    // viewer: drift correction visual nudge is implicit via hard-seek
   }
 
   function applySync(data) {
@@ -1156,7 +1171,28 @@
       case "play":
       case "pause":
       case "seek":
-        applySync(data);
+        // Host receives play/pause/seek from a viewer (who has permission).
+        // The host must relay it to ALL other viewers (so everyone syncs)
+        // AND also apply it to the host's own player.
+        if (state.isHost) {
+          // The host received this from a viewer. Relay to all other viewers
+          // and apply to the host's own player.
+          // Skip applySync for host (it returns early). Apply manually.
+          if (data.playing != null) {
+            if (data.playing && player.paused) player.play().catch(function () {});
+            if (!data.playing && !player.paused) player.pause();
+          }
+          if (typeof data.time === "number") {
+            var drift = Math.abs(player.currentTime - data.time);
+            if (drift > DRIFT_HARD) {
+              try { player.currentTime = data.time; } catch (e) {}
+            }
+          }
+          // Broadcast to ALL other viewers (excluding the sender)
+          broadcast({ t: data.t, playing: data.playing, time: data.time });
+        } else {
+          applySync(data);
+        }
         break;
 
       case "src":
