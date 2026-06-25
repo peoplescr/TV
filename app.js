@@ -1036,14 +1036,25 @@
     if (state.isHost) return;          // host drives, never follows
     if (state.srcType !== "file") return;
     if (!player.src) return;
-    if (typeof data.time !== "number") return;
-    var drift = Math.abs(player.currentTime - data.time);
-    if (data.playing != null) {
-      if (data.playing && player.paused) player.play().catch(function () {});
-      if (!data.playing && !player.paused) player.pause();
+    // Handle play/pause by message type (play/pause messages don't carry a "playing" field)
+    if (data.t === "play") {
+      if (player.paused) player.play().catch(function () {});
+      return;
     }
-    if (drift > DRIFT_HARD) {
-      try { player.currentTime = data.time; } catch (e) {}
+    if (data.t === "pause") {
+      if (!player.paused) player.pause();
+      return;
+    }
+    // For sync/seek messages, use the playing field and time
+    if (typeof data.time === "number") {
+      var drift = Math.abs(player.currentTime - data.time);
+      if (data.playing != null) {
+        if (data.playing && player.paused) player.play().catch(function () {});
+        if (!data.playing && !player.paused) player.pause();
+      }
+      if (drift > DRIFT_HARD) {
+        try { player.currentTime = data.time; } catch (e) {}
+      }
     }
   }
 
@@ -1193,7 +1204,9 @@
             }
           }
           // Broadcast to ALL other viewers (excluding the sender).
-          // For play/pause/seek we relay the original message shape.
+          // ALWAYS broadcast so viewers sync immediately, even if the host
+          // was already in the requested state (which would suppress the
+          // native play/pause/seeked event).
           broadcast({ t: data.t, time: data.time || player.currentTime });
         } else {
           applySync(data);
