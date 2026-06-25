@@ -359,12 +359,32 @@
      ============================================================ */
   function applyAdminRestrictions() {
     var p = state.adminPerms;
-    // Prevent the video's native controls from being used for restricted actions.
-    // The CSS hides the native controls based on these custom properties.
-    player.style.setProperty("--wp-allow-playpause", p.allowPlayPause ? "1" : "0");
-    player.style.setProperty("--wp-allow-seek", p.allowSeek ? "1" : "0");
+    // When restrictions are active on a viewer, remove the native video controls
+    // to prevent the user from playing/pausing/seeking via the browser's UI.
+    // The host still gets sync commands pushed to them.
+    if (state.isHost) {
+      // Host always has full control regardless of toggle state
+      player.removeAttribute("controls");
+      // Re-add controls to host player so they can use them
+      // (we set it back so host always has controls)
+      player.setAttribute("controls", "controls");
+    } else {
+      // Viewer: remove native controls if either play/pause or seek is restricted
+      var restrictControls = !p.allowPlayPause || !p.allowSeek;
+      if (restrictControls) {
+        player.removeAttribute("controls");
+      } else {
+        player.setAttribute("controls", "controls");
+      }
+    }
 
-    // Show/hide a lock icon in the controls to indicate restricted actions
+    // Fullscreen button visibility
+    var fsBtn = $("fullscreen-btn");
+    if (fsBtn) {
+      fsBtn.style.display = p.allowFullscreen ? "" : "none";
+    }
+
+    // Show/hide a lock icon in the top bar when any restriction is active
     var lockBtn = $("perm-lock-btn");
     if (lockBtn) {
       var anyRestricted = !p.allowPlayPause || !p.allowSeek || !p.allowFullscreen;
@@ -376,12 +396,6 @@
         if (!p.allowFullscreen) parts.push("Fullscreen");
         lockBtn.title = "Restricted: " + parts.join(", ");
       }
-    }
-
-    // Fullscreen button visibility
-    var fsBtn = $("fullscreen-btn");
-    if (fsBtn) {
-      fsBtn.style.display = p.allowFullscreen ? "" : "none";
     }
 
     // Sync the settings UI toggles if the settings sheet is open
