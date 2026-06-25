@@ -352,6 +352,65 @@
 
   var player = $("player");
 
+  /* ============================================================
+     Admin permissions — host controls what viewers can do.
+     applyAdminRestrictions() runs on the VIEWER side each time
+     permissions are received from the host (via hello or admin-perms).
+     ============================================================ */
+  function applyAdminRestrictions() {
+    var p = state.adminPerms;
+    // Prevent the video's native controls from being used for restricted actions.
+    // The CSS hides the native controls based on these custom properties.
+    player.style.setProperty("--wp-allow-playpause", p.allowPlayPause ? "1" : "0");
+    player.style.setProperty("--wp-allow-seek", p.allowSeek ? "1" : "0");
+
+    // Show/hide a lock icon in the controls to indicate restricted actions
+    var lockBtn = $("perm-lock-btn");
+    if (lockBtn) {
+      var anyRestricted = !p.allowPlayPause || !p.allowSeek || !p.allowFullscreen;
+      lockBtn.classList.toggle("hidden", !anyRestricted);
+      if (anyRestricted) {
+        var parts = [];
+        if (!p.allowPlayPause) parts.push("Play/Pause");
+        if (!p.allowSeek) parts.push("Seek");
+        if (!p.allowFullscreen) parts.push("Fullscreen");
+        lockBtn.title = "Restricted: " + parts.join(", ");
+      }
+    }
+
+    // Fullscreen button visibility
+    var fsBtn = $("fullscreen-btn");
+    if (fsBtn) {
+      fsBtn.style.display = p.allowFullscreen ? "" : "none";
+    }
+
+    // Sync the settings UI toggles if the settings sheet is open
+    syncAdminPermsUI();
+  }
+
+  /* Sync the host permission toggles in the settings UI.
+     Only visible to the host. */
+  function syncAdminPermsUI() {
+    var p = state.adminPerms;
+    var pp = $("perm-allow-playpause");
+    var sk = $("perm-allow-seek");
+    var fs = $("perm-allow-fullscreen");
+    if (pp) pp.checked = p.allowPlayPause;
+    if (sk) sk.checked = p.allowSeek;
+    if (fs) fs.checked = p.allowFullscreen;
+  }
+
+  // Notify all connected viewers of a host permission change
+  function broadcastPerms() {
+    if (!state.isHost) return;
+    var msg = { t: "admin-perms",
+      allowPlayPause: state.adminPerms.allowPlayPause,
+      allowSeek: state.adminPerms.allowSeek,
+      allowFullscreen: state.adminPerms.allowFullscreen
+    };
+    broadcast(msg);
+  }
+
   // PFP size budget — avatars are tiny, so downscale before persisting/sending
   // to keep localStorage and peer messages small.
   var PFP_MAX = 256;          // px (square)
@@ -2188,6 +2247,12 @@
     DataMeter.render();
     renderNetInfo();
     TurnMonitor.update();
+    // Show/hide the host permissions section based on role
+    var permSection = $("perm-section");
+    if (permSection) {
+      permSection.classList.toggle("hidden", !state.isHost);
+    }
+    syncAdminPermsUI();
   }
   function closeSettings() {
     $("settings-backdrop").classList.add("hidden");
@@ -2320,6 +2385,24 @@
       toast("Local TURN saved! (takes effect on next connection)", "ok");
       probeLocalTurn();
     });
+
+    // ---- Host permission toggles ----
+    var permPP = $("perm-allow-playpause");
+    var permSK = $("perm-allow-seek");
+    var permFS = $("perm-allow-fullscreen");
+    function wirePermToggle(el, key) {
+      if (!el) return;
+      el.addEventListener("change", function () {
+        state.adminPerms[key] = el.checked;
+        broadcastPerms();
+        // apply locally if host (so the lock icon updates)
+        applyAdminRestrictions();
+        toast("Permission updated — viewers notified.", el.checked ? "ok" : "");
+      });
+    }
+    wirePermToggle(permPP, "allowPlayPause");
+    wirePermToggle(permSK, "allowSeek");
+    wirePermToggle(permFS, "allowFullscreen");
 
     // ---- Tenor sticker API key ----
     Stickers.loadKey();

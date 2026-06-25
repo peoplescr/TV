@@ -86,6 +86,7 @@
         </button>
       </div>
       <div class="topbar-right">
+        <span id="perm-lock-btn" class="chip chip-perm hidden" title="Restricted">🔒</span>
         <button id="data-chip" class="chip chip-data" title="Data used this session — tap for details" aria-label="Data used this session">
           <span class="chip-arrow up">↑</span><span id="data-up">0 B</span>
           <span class="chip-sep">·</span>
@@ -474,7 +475,43 @@
         </div>
       </div>
 
-      <!-- Stickers: optional Tenor API key for the searchable sticker tab -->
+      <!-- Host Permission Controls — only shown when you are the host -->
+      <div id="perm-section" class="set-block perm-section hidden">
+        <div class="set-label">Viewer Permissions (Host only)</div>
+        <p class="set-note" style="margin-top:0">Toggle what viewers in this room are allowed to do.</p>
+        <label class="set-row">
+          <span class="set-row-text">
+            <strong>Play / Pause</strong>
+            <small>Let viewers play and pause the video</small>
+          </span>
+          <span class="switch">
+            <input type="checkbox" id="perm-allow-playpause" checked />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </span>
+        </label>
+        <label class="set-row">
+          <span class="set-row-text">
+            <strong>Seek</strong>
+            <small>Let viewers skip around the video</small>
+          </span>
+          <span class="switch">
+            <input type="checkbox" id="perm-allow-seek" checked />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </span>
+        </label>
+        <label class="set-row">
+          <span class="set-row-text">
+            <strong>Fullscreen</strong>
+            <small>Let viewers go fullscreen</small>
+          </span>
+          <span class="switch">
+            <input type="checkbox" id="perm-allow-fullscreen" checked />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </span>
+        </label>
+      </div>
+
+        <!-- Stickers: optional Tenor API key for the searchable sticker tab -->
       <div class="set-block">
         <div class="set-label">Stickers</div>
         <p class="set-note" style="margin-top:0">A built-in emoji pack is always available. Add a free Tenor API key to unlock a searchable sticker tab.</p>
