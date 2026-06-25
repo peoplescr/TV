@@ -1175,21 +1175,26 @@
         // The host must relay it to ALL other viewers (so everyone syncs)
         // AND also apply it to the host's own player.
         if (state.isHost) {
-          // The host received this from a viewer. Relay to all other viewers
-          // and apply to the host's own player.
-          // Skip applySync for host (it returns early). Apply manually.
-          if (data.playing != null) {
+          // "play" and "pause" messages don't carry a "playing" field —
+          // the message type itself tells us what to do.
+          if (data.t === "play") {
+            if (player.paused) player.play().catch(function () {});
+          } else if (data.t === "pause") {
+            if (!player.paused) player.pause();
+          } else if (data.t === "sync" && data.playing != null) {
             if (data.playing && player.paused) player.play().catch(function () {});
             if (!data.playing && !player.paused) player.pause();
           }
+          // Apply seek position if provided
           if (typeof data.time === "number") {
             var drift = Math.abs(player.currentTime - data.time);
             if (drift > DRIFT_HARD) {
               try { player.currentTime = data.time; } catch (e) {}
             }
           }
-          // Broadcast to ALL other viewers (excluding the sender)
-          broadcast({ t: data.t, playing: data.playing, time: data.time });
+          // Broadcast to ALL other viewers (excluding the sender).
+          // For play/pause/seek we relay the original message shape.
+          broadcast({ t: data.t, time: data.time || player.currentTime });
         } else {
           applySync(data);
         }
