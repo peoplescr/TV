@@ -343,7 +343,11 @@
     syncTimer: null,
     pingTimer: null,
     call: null,        // active media call (screen/camera)
-    remoteStream: null
+    remoteStream: null,
+    chatHistory: [],   // persistent chat log sent to new/reconnecting viewers
+    adminPerms: { allowPlayPause: true, allowSeek: true, allowFullscreen: true }, // host-side viewer permissions
+    wakeLock: null,    // Wake Lock sentinel (prevents OS throttling in background)
+    _lastSeekTime: 0  // viewer: last allowed seek position (for admin perm enforcement)
   };
 
   var player = $("player");
@@ -772,7 +776,12 @@
       state.peers[conn.peer] = entry;
       renderPeers();
       setOnline("connected");
-      conn.send({ t: "hello", name: state.name, hostName: state.name, pfp: state.pfp, srcType: state.srcType, fileName: state.fileName });
+      conn.send({ t: "hello", name: state.name, hostName: state.name, pfp: state.pfp, srcType: state.srcType, fileName: state.fileName, perms: state.adminPerms });
+
+      // Send chat history so rejoining viewers see past messages
+      if (state.chatHistory.length) {
+        try { conn.send({ t: "chat-history", messages: state.chatHistory }); } catch (e) {}
+      }
 
       // If host already has a file/screen running, bring the new viewer up to speed
       if (state.srcType === "file" && state.fileName) {
@@ -968,6 +977,11 @@
           hideEmpty();
           showOverlay(true, "Host is sharing their screen…", true);
         }
+        // apply admin permissions from host
+        if (data.perms) {
+          state.adminPerms = data.perms;
+          applyAdminRestrictions();
+        }
         renderPeers();
         break;
 
@@ -999,6 +1013,34 @@
         // HOST RELAY: a viewer sent a chat — rebroadcast to every OTHER peer
         // so 3+ person rooms all see each other's messages.
         if (state.isHost) relayToOthers(conn, data);
+        break;
+
+      case "chat-history":
+        // host sends past messages when a viewer joins/rejoins
+        if (data.messages && Array.isArray(data.messages)) {
+          var existingMids = {};
+          var existingEls = ($("chat-msgs") || {}).children;
+          if (existingEls) {
+            for (var ei = 0; ei < existingEls.length; ei++) {
+              var em = existingEls[ei].getAttribute("data-mid");
+              if (em) existingMids[em] = true;
+            }
+          }
+          for (var hi = 0; hi < data.messages.length; hi++) {
+            var hm = data.messages[hi];
+            // skip messages already rendered
+            if (hm.mid && existingMids[hm.mid]) continue;
+            addChat(hm);
+          }
+        }
+        break;
+
+      case "admin-perms":
+        // host -> viewers: permission changes
+        if (data.allowPlayPause != null) state.adminPerms.allowPlayPause = data.allowPlayPause;
+        if (data.allowSeek != null)     state.adminPerms.allowSeek = data.allowSeek;
+        if (data.allowFullscreen != null) state.adminPerms.allowFullscreen = data.allowFullscreen;
+        applyAdminRestrictions();
         break;
 
       case "react":
@@ -1208,6 +1250,26 @@
     renderPeers();
     DataMeter.render();          // zero the chip on (re)entry
     try { ChatDrawer.showInitial(); } catch (e) {}   // show FAB on mobile
+
+    // Request Wake Lock so the OS doesn't throttle/sleep the tab while in a room.
+    // This keeps the WebRTC connection alive and video playing in the background.
+    requestWakeLock();
+  }
+
+  /* ---- Wake Lock: prevent OS from sleeping/throttling the tab ---- */
+  function requestWakeLock() {
+    if (!navigator.wakeLock) return;
+    navigator.wakeLock.request("screen").then(function (lock) {
+      state.wakeLock = lock;
+      // if Wake Lock is released (e.g. tab goes background on some browsers), re-request
+      lock.addEventListener("release", function () { state.wakeLock = null; });
+    }).catch(function () { /* Wake Lock not available or denied — no-op */ });
+  }
+  function releaseWakeLock() {
+    if (state.wakeLock) {
+      try { state.wakeLock.release(); } catch (e) {}
+      state.wakeLock = null;
+    }
   }
 
   function offerBecomeHost() {
@@ -1788,6 +1850,10 @@
       box.appendChild(div);
       box.scrollTop = box.scrollHeight;
       while (box.children.length > 200) box.removeChild(box.firstChild);
+      // persist system messages to chat history
+      if (state.chatHistory.length < 500) {
+        state.chatHistory.push({ sys: true, text: opts.text, ts: Date.now() });
+      }
       return;
     }
 
@@ -1898,6 +1964,14 @@
     box.scrollTop = box.scrollHeight;
     // cap history
     while (box.children.length > 200) box.removeChild(box.firstChild);
+    // persist to chat history (for rejoining viewers)
+    if (state.chatHistory.length < 500) {
+      state.chatHistory.push({
+        name: opts.name, pfp: opts.pfp, text: opts.text, mid: opts.mid,
+        kind: opts.kind || null, sticker: opts.sticker || null,
+        reply: opts.reply || null, ts: Date.now()
+      });
+    }
   }
   function sysMsg(text) { addChat({ sys: true, text: text }); }
 
@@ -3592,6 +3666,8 @@
     state.hostConn = null;
     setReply(null);
     _reactions = {};
+    // clear chat history when the room is destroyed
+    state.chatHistory = [];
     state.fileName = null;
     state.srcType = null;
     state._intent = null;       // clear routing intent so next session starts clean
@@ -3605,6 +3681,7 @@
     try { Stickers.closePicker(); } catch (e) {}
     DataMeter.reset();
     MediaMeter.reset();
+    releaseWakeLock();
     setOnline("offline");
     showScreen("lobby");
   }
@@ -3702,6 +3779,35 @@
     // route on first load
     var code = parseHash();
     if (code) onHash(); else showScreen("lobby");
+
+    // ---- Background survival: keep connection alive when tab is hidden ----
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) {
+        // Tab went to background — do NOT destroy peer or leave room.
+        // The Wake Lock (if active) helps prevent OS throttling.
+        // Just stop sync timer to save battery; reconnect restores it.
+        if (state.syncTimer) { clearInterval(state.syncTimer); state.syncTimer = null; }
+      } else {
+        // Tab came back to foreground — check if peer is still connected
+        if (state.peer && state.room) {
+          if (state.peer.disconnected) {
+            try { state.peer.reconnect(); } catch (e) {}
+          }
+          // restart sync timer if host
+          if (state.isHost) startHostSync();
+          // re-request wake lock if it was released
+          requestWakeLock();
+        }
+      }
+    });
+
+    // Warn before closing the tab while in a room
+    window.addEventListener("beforeunload", function (e) {
+      if (state.room) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    });
   }
 
   // boot
