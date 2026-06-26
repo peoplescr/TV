@@ -620,28 +620,30 @@ input::placeholder { color: var(--text-mut); }
 
 #playback-bar {
   display: flex;
-  gap: 6px;
-  padding: 6px 8px;
-  background: rgba(0,0,0,.45);
-  border-radius: 10px;
+  gap: 4px;
+  padding: 4px 6px;
+  background: rgba(0,0,0,.35);
+  border-radius: 8px;
   flex-wrap: wrap;
-  margin-top: 6px;
+  margin-top: 4px;
+  flex-shrink: 0;
 }
 .playback-btn {
   flex: 1;
-  min-width: 90px;
-  padding: 8px 10px;
-  border: 1px solid rgba(255,255,255,.25);
-  border-radius: 8px;
-  background: rgba(255,255,255,.08);
+  min-width: 70px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 6px;
+  background: rgba(255,255,255,.06);
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: background .15s;
+  white-space: nowrap;
 }
-.playback-btn:hover { background: rgba(255,255,255,.18); }
-.playback-btn:active { background: rgba(255,255,255,.28); }
+.playback-btn:hover { background: rgba(255,255,255,.14); }
+.playback-btn:active { background: rgba(255,255,255,.22); }
 
 /* floating emoji layer over the video */
 .float-layer {

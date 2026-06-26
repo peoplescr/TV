@@ -2108,12 +2108,14 @@
       reqPlay.addEventListener("click", function () {
         broadcast({ t: "play", time: player.currentTime || 0 });
         toast("Requested play", "ok");
+        try { ChatDrawer.close(); } catch (e) {}
       });
     }
     if (reqPause) {
       reqPause.addEventListener("click", function () {
         broadcast({ t: "pause", time: player.currentTime || 0 });
         toast("Requested pause", "ok");
+        try { ChatDrawer.close(); } catch (e) {}
       });
     }
 
