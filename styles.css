@@ -1194,6 +1194,8 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
 /* ---- Desktop: chat becomes a static column ---- */
 @media (min-width: 1024px) {
   .stage { grid-template-columns: 1fr 340px; }
+  .stage.chat-closed { grid-template-columns: 1fr; }
+  .stage.chat-closed .chat { display: none; }
   .chat {
     position: relative; top: auto; bottom: auto; right: auto; left: auto;
     width: auto; height: auto; transform: none;
@@ -1204,7 +1206,6 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
   }
   .chat-swipe { display: none; }
   .chat-backdrop { display: none !important; }
-  #chat-toggle { display: none !important; }     /* desktop: chat column is always open */
   .room-code { display: inline; }
 }
 

@@ -1593,7 +1593,7 @@
      On desktop it's a no-op (chat is a static column there).
      ============================================================ */
   var ChatDrawer = (function () {
-    var panel, backdrop, fab, badge, input, toggle;
+    var panel, backdrop, fab, badge, input, toggle, stage;
     var isOpen = false;
     var unread = 0;
     var idleTO = null;
@@ -1616,7 +1616,10 @@
       badge = $("chat-act-badge");
       input = $("chat-input");
       toggle = $("chat-toggle");
+      stage = $("stage") || document.querySelector(".stage");
       isMobile = window.matchMedia("(max-width: 1023px)").matches;
+      // desktop starts with chat open (visible grid column)
+      if (!mobile()) isOpen = true;
 
       // Chat action button (in the controls tray) toggles the sheet
       var chatBtn = $("chat-btn");
@@ -1636,7 +1639,16 @@
         if (!mobile()) {
           // desktop: ensure clean state
           if (panel) panel.style.transform = "";
+          panel.classList.remove("open", "dragging");
           hideBackdrop();
+          if (stage && isOpen) stage.classList.remove("chat-closed");
+          if (toggle && isOpen) toggle.classList.remove("hidden");
+        } else {
+          // mobile: clean up desktop grid state
+          if (stage) stage.classList.remove("chat-closed");
+          if (!isOpen) {
+            if (toggle) toggle.classList.add("hidden");
+          }
         }
       });
 
@@ -1672,32 +1684,46 @@
     function hideBackdrop() { if (backdrop) backdrop.classList.add("hidden"); }
 
     function open() {
-      if (!mobile()) return;        // desktop: nothing to do
-      isOpen = true;
-      panel.classList.add("open");
-      showBackdrop();
-      clearUnread();
-      if (toggle) toggle.classList.remove("hidden");
-      // focus the input so typing is instant — one tap to text
-      setTimeout(function () { try { input.focus({ preventScroll: true }); } catch (e) {} }, 280);
-      bumpIdle();
+      if (mobile()) {
+        isOpen = true;
+        panel.classList.add("open");
+        showBackdrop();
+        clearUnread();
+        if (toggle) toggle.classList.remove("hidden");
+        // focus the input so typing is instant — one tap to text
+        setTimeout(function () { try { input.focus({ preventScroll: true }); } catch (e) {} }, 280);
+        bumpIdle();
+      } else {
+        // desktop: collapse the chat column back into view via grid
+        isOpen = true;
+        if (stage) stage.classList.remove("chat-closed");
+        if (toggle) toggle.classList.remove("hidden");
+        clearUnread();
+        setTimeout(function () { try { input.focus({ preventScroll: true }); } catch (e) {} }, 280);
+      }
     }
     function close() {
-      if (!mobile()) return;
-      isOpen = false;
-      panel.classList.remove("open");
-      panel.classList.remove("dragging");
-      panel.style.transform = "";
-      hideBackdrop();
-      if (toggle) toggle.classList.add("hidden");
-      if (idleTO) { clearTimeout(idleTO); idleTO = null; }
-      try { input.blur(); } catch (e) {}
+      if (mobile()) {
+        isOpen = false;
+        panel.classList.remove("open");
+        panel.classList.remove("dragging");
+        panel.style.transform = "";
+        hideBackdrop();
+        if (toggle) toggle.classList.add("hidden");
+        if (idleTO) { clearTimeout(idleTO); idleTO = null; }
+        try { input.blur(); } catch (e) {}
+      } else {
+        // desktop: collapse the grid to hide the chat column
+        isOpen = false;
+        if (stage) stage.classList.add("chat-closed");
+        if (toggle) toggle.classList.add("hidden");
+        try { input.blur(); } catch (e) {}
+      }
     }
     function toggle() { if (isOpen) close(); else open(); }
 
     // incoming chat while closed => increment the badge
     function onIncoming() {
-      if (!mobile()) return;        // desktop always shows chat
       if (isOpen) { clearUnread(); return; }
       unread++;
       if (badge) {
