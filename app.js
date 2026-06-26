@@ -2109,6 +2109,7 @@
         broadcast({ t: "play", time: player.currentTime || 0 });
         toast("Requested play", "ok");
         try { ChatDrawer.close(); } catch (e) {}
+        try { FsChat.close(); } catch (e) {}
       });
     }
     if (reqPause) {
@@ -2116,6 +2117,7 @@
         broadcast({ t: "pause", time: player.currentTime || 0 });
         toast("Requested pause", "ok");
         try { ChatDrawer.close(); } catch (e) {}
+        try { FsChat.close(); } catch (e) {}
       });
     }
 
@@ -2915,6 +2917,7 @@
       setFs: setFs,
       onNewMessage: onNewMessage,
       isOpen: function () { return open; },
+      close: close,
       init: function () { ensure(); wireMsgList(); }
     };
   })();
