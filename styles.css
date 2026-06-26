@@ -618,33 +618,6 @@ input::placeholder { color: var(--text-mut); }
 }
 .react-bar .react-quick:active { transform: scale(1.25); background: var(--panel-2); }
 
-#playback-bar {
-  display: flex;
-  gap: 4px;
-  padding: 4px 6px;
-  background: rgba(0,0,0,.35);
-  border-radius: 8px;
-  flex-wrap: wrap;
-  margin-top: 4px;
-  flex-shrink: 0;
-}
-.playback-btn {
-  flex: 1;
-  min-width: 70px;
-  padding: 6px 8px;
-  border: 1px solid rgba(255,255,255,.2);
-  border-radius: 6px;
-  background: rgba(255,255,255,.06);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .15s;
-  white-space: nowrap;
-}
-.playback-btn:hover { background: rgba(255,255,255,.14); }
-.playback-btn:active { background: rgba(255,255,255,.22); }
-
 /* floating emoji layer over the video */
 .float-layer {
   position: absolute; inset: 0; pointer-events: none; overflow: hidden;

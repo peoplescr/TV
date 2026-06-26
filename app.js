@@ -913,7 +913,9 @@
 
   var _applyingRemote = false;
 
-  // host-side playback events -> broadcast immediately
+  // host-side playback events -> broadcast immediately.
+  // Viewer-initiated play/pause/seek also fires these events; they go to the
+  // host via broadcast(), the host applies them and relays to all peers.
   function wirePlayerEvents() {
     player.addEventListener("play", function () {
       if (_applyingRemote) return;
@@ -937,7 +939,6 @@
         }, 120);
       }
     });
-    // viewer: drift correction visual nudge is implicit via hard-seek
   }
 
   function applySync(data) {
@@ -2130,25 +2131,10 @@
       })(quicks[i]);
     }
 
-    // playback control buttons — viewers request play/pause from host
-    var reqPlay = $("req-play");
-    var reqPause = $("req-pause");
-    if (reqPlay) {
-      reqPlay.addEventListener("click", function () {
-        broadcast({ t: "play", time: player.currentTime || 0 });
-        toast("Requested play", "ok");
-        try { ChatDrawer.close(); } catch (e) {}
-        try { FsChat.close(); } catch (e) {}
-      });
-    }
-    if (reqPause) {
-      reqPause.addEventListener("click", function () {
-        broadcast({ t: "pause", time: player.currentTime || 0 });
-        toast("Requested pause", "ok");
-        try { ChatDrawer.close(); } catch (e) {}
-        try { FsChat.close(); } catch (e) {}
-      });
-    }
+    // viewer playback control is handled by wirePlayerEvents — the video
+    // player's native controls (play/pause click, seekbar, spacebar, arrow
+    // keys) fire play/pause/seek events that broadcast to the host, who
+    // applies them locally and relays to all other peers.
 
     // header X — closes the mobile chat drawer (hidden via CSS on desktop,
     // where the chat column is always open)
