@@ -1083,6 +1083,11 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
   }
 }
 
+/* ensure the HTML hidden attribute works — ID specificity beats UA [hidden] */
+#fs-chat-panel[hidden] {
+  display: none !important;
+}
+
 /* when chat panel closes */
 #fs-chat-panel.closing {
   animation: slideOutChat 0.25s ease forwards;

@@ -2808,6 +2808,7 @@
       ensure();
       open = true;
       panel.hidden = false;
+      panel.classList.remove("hidden");
       panel.classList.add("open");
       clearUnread();
       syncFromMain();
@@ -2826,6 +2827,7 @@
       setTimeout(function () {
         panel.classList.remove("closing");
         panel.hidden = true;
+        panel.classList.add("hidden");
       }, 250);
     }
     function toggle() { if (open) close(); else openPanel(); }
