@@ -1189,7 +1189,6 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
 }
 .chat.open { transform: translateY(0); }
 .chat.dragging { transition: none; }
-#chat-toggle { display: none !important; }     /* desktop-only control */
 .room-code { display: none; }                  /* save space on phones */
 
 /* ---- Desktop: chat becomes a static column ---- */
@@ -1205,6 +1204,7 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
   }
   .chat-swipe { display: none; }
   .chat-backdrop { display: none !important; }
+  #chat-toggle { display: none !important; }     /* desktop: chat column is always open */
   .room-code { display: inline; }
 }
 
@@ -1250,6 +1250,7 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
   }
   .chat-swipe { display: none; }
   .chat-backdrop { display: none !important; }
+  #chat-toggle { display: none !important; }     /* landscape phone: chat pinned open */
   /* hide bottom action bar for a cleaner fullscreen experience — only video + chat */
   .actions, .peers { display: none; }
 }

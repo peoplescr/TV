@@ -1593,7 +1593,7 @@
      On desktop it's a no-op (chat is a static column there).
      ============================================================ */
   var ChatDrawer = (function () {
-    var panel, backdrop, fab, badge, input;
+    var panel, backdrop, fab, badge, input, toggle;
     var isOpen = false;
     var unread = 0;
     var idleTO = null;
@@ -1615,6 +1615,7 @@
       fab = null;        // FAB removed — chat is opened from the action bar
       badge = $("chat-act-badge");
       input = $("chat-input");
+      toggle = $("chat-toggle");
       isMobile = window.matchMedia("(max-width: 1023px)").matches;
 
       // Chat action button (in the controls tray) toggles the sheet
@@ -1676,6 +1677,7 @@
       panel.classList.add("open");
       showBackdrop();
       clearUnread();
+      if (toggle) toggle.classList.remove("hidden");
       // focus the input so typing is instant — one tap to text
       setTimeout(function () { try { input.focus({ preventScroll: true }); } catch (e) {} }, 280);
       bumpIdle();
@@ -1687,6 +1689,7 @@
       panel.classList.remove("dragging");
       panel.style.transform = "";
       hideBackdrop();
+      if (toggle) toggle.classList.add("hidden");
       if (idleTO) { clearTimeout(idleTO); idleTO = null; }
       try { input.blur(); } catch (e) {}
     }
@@ -2121,12 +2124,12 @@
       });
     }
 
-    // desktop-only close button (kept for keyboard accessibility)
+    // header X — closes the mobile chat drawer (hidden via CSS on desktop,
+    // where the chat column is always open)
     var toggle = $("chat-toggle");
     if (toggle) {
       toggle.addEventListener("click", function () {
-        // on desktop chat is always visible; this is a no-op affordance there.
-        // (Real mobile control is the FAB / swipe.)
+        try { ChatDrawer.close(); } catch (e) {}
       });
     }
   }
