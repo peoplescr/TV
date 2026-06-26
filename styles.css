@@ -618,6 +618,31 @@ input::placeholder { color: var(--text-mut); }
 }
 .react-bar .react-quick:active { transform: scale(1.25); background: var(--panel-2); }
 
+#playback-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(0,0,0,.45);
+  border-radius: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.playback-btn {
+  flex: 1;
+  min-width: 90px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 8px;
+  background: rgba(255,255,255,.08);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.playback-btn:hover { background: rgba(255,255,255,.18); }
+.playback-btn:active { background: rgba(255,255,255,.28); }
+
 /* floating emoji layer over the video */
 .float-layer {
   position: absolute; inset: 0; pointer-events: none; overflow: hidden;
@@ -932,6 +957,214 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
 #video-wrap:-webkit-full-screen #player { object-fit: contain; }
 
 /* ============================================================
+   FULLSCREEN CHAT BUTTON (FAB) — RIGHT MIDDLE POSITIONING
+   ============================================================ */
+#fs-chat-btn {
+  position: fixed !important;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  color: #0a0b10;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  flex-shrink: 0;
+}
+
+#fs-chat-btn:hover {
+  transform: translateY(-50%) scale(1.08);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+#fs-chat-btn:active {
+  transform: translateY(-50%) scale(0.96);
+}
+
+#fs-chat-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* unread badge for fullscreen chat */
+#fs-chat-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--err);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #0a0b10;
+}
+
+/* ============================================================
+   FULLSCREEN CHAT PANEL WITH KEYBOARD SUPPORT
+   ============================================================ */
+/* fullscreen chat header */
+.fs-chat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.fs-chat-title {
+  font-weight: 600;
+  flex: 1;
+  font-size: 16px;
+}
+
+/* close button in the fullscreen chat header */
+.fs-chat-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .14s, color .14s;
+}
+.fs-chat-close:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+#fs-chat-panel {
+  position: fixed !important;
+  right: 0;
+  top: 0;
+  width: 100%;
+  max-width: 340px;
+  height: 100%;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  z-index: 130;
+  display: flex;
+  flex-direction: column;
+  animation: slideInChat 0.3s ease;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.3);
+  
+  /* KEYBOARD FIX: Don't let keyboard push this panel off-screen */
+  bottom: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+@keyframes slideInChat {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* when chat panel closes */
+#fs-chat-panel.closing {
+  animation: slideOutChat 0.25s ease forwards;
+}
+
+@keyframes slideOutChat {
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+/* Fix chat messages container to scroll above keyboard */
+#fs-chat-msgs {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Fix chat form to stay visible above keyboard */
+#fs-chat-form {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  /* KEYBOARD FIX: Use bottom safe-area but allow flexibility */
+  padding-bottom: max(10px, calc(env(safe-area-inset-bottom, 0px)));
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  align-items: center;
+  background: var(--panel);
+  /* Ensure input is visible */
+  position: relative;
+  z-index: 150;
+}
+
+#fs-chat-form input {
+  flex: 1;
+  background: var(--input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+  min-height: 40px;
+  font: inherit;
+  font-size: 16px;
+  transition: border-color .14s;
+}
+
+#fs-chat-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  /* KEYBOARD FIX: Scroll input into view when focused */
+  scroll-behavior: smooth;
+}
+
+#fs-chat-form button {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  background: var(--accent);
+  border: none;
+  color: #0a0b10;
+  border-radius: 50%;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .14s, transform .08s;
+}
+
+#fs-chat-form button:hover {
+  background: var(--accent-d);
+}
+
+#fs-chat-form button:active {
+  transform: scale(.92);
+}
+
+/* ============================================================
    RESPONSIVE
    Desktop (>=1024px): chat = always-visible right column, no FAB.
    Mobile (<1024px): chat = slide-in drawer over the video.
@@ -985,6 +1218,24 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
   .act-btn .act-label { display: none; }
   .act-btn { padding: 10px 12px; }
   .act-btn .act-ico { font-size: 18px; }
+  
+  /* adjust FAB for small screens */
+  #fs-chat-btn {
+    width: 52px;
+    height: 52px;
+    right: 12px;
+  }
+  
+  #fs-chat-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+  
+  /* Make chat panel full width on small phones */
+  #fs-chat-panel {
+    width: 100%;
+    max-width: 100%;
+  }
 }
 
 /* ---- Landscape phone: side-by-side, chat pinned open ---- */
@@ -998,590 +1249,29 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
   .chat-swipe { display: none; }
   .chat-backdrop { display: none !important; }
   /* hide bottom action bar for a cleaner fullscreen experience — only video + chat */
-  .actions { display: none; }
-}
-
-/* ---- Hide Draw action button in fullscreen (native + iOS CSS fallback) ---- */
-#room.is-fullscreen #draw-action-btn { display: none !important; }
-
-/* ---- Desktop: keep the old "collapse" toggle hidden, chat always visible ---- */
-@media (min-width: 1024px) {
-  #chat-toggle { display: none !important; }
+  .actions, .peers { display: none; }
 }
 
 /* ============================================================
-   FULLSCREEN CHAT OVERLAY
-   Everything below is INVISIBLE unless #video-wrap is in
-   fullscreen — either the native Fullscreen API or the iOS
-   CSS fallback (.cfs). The video element itself keeps its
-   native controls; we layer chat on top.
-   ============================================================ */
-
-/* shared visibility switch — flipped on by JS adding .fschat-on */
-#video-wrap .fs-chat-btn,
-#video-wrap .fs-toast-layer,
-#video-wrap .fs-chat-panel { display: none; }
-
-#video-wrap.fschat-on .fs-chat-btn,
-#video-wrap.fschat-on .fs-toast-layer { display: flex; }
-
-/* the panel is display:flex only when .open; otherwise hidden */
-#video-wrap.fschat-on .fs-chat-panel.open { display: flex; }
-
-/* ---- FAB: right-middle, big & smooth on the video ---- */
-.fs-chat-btn {
-  position: absolute;
-  right: max(12px, var(--sar));
-  top: 50%;
-  transform: translateY(-50%);
-  width: 52px; height: 52px;
-  border-radius: 50%;
-  border: 1px solid rgba(255,255,255,.18);
-  background: rgba(20,21,26,.55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: #fff;
-  align-items: center; justify-content: center;
-  cursor: pointer;
-  z-index: 12;
-  opacity: .72;
-  /* bigger, smoother motion for touch */
-  transition: opacity .25s ease, transform .18s cubic-bezier(.32,.72,0,1), background .18s ease, box-shadow .18s ease;
-  -webkit-tap-highlight-color: transparent;
-  box-shadow: 0 4px 14px rgba(0,0,0,.35);
-  /* no jitter on press */
-  touch-action: manipulation;
-}
-.fs-chat-btn svg { width: 24px; height: 24px; }
-.fs-chat-btn:hover,
-.fs-chat-btn:focus-visible {
-  opacity: 1;
-  background: rgba(108,140,255,.7);
-  box-shadow: 0 6px 18px rgba(108,140,255,.35);
-}
-.fs-chat-btn:active { transform: translateY(-50%) scale(.92); }
-/* when idle the FAB dims but STAYS visible and tappable — never fully hidden,
-   so it can always be reached on touch devices where there is no hover. */
-#video-wrap.fschat-idle .fs-chat-btn { opacity: .45; }
-#video-wrap.fschat-idle .fs-chat-btn:hover,
-#video-wrap.fschat-idle .fs-chat-btn:focus-visible { opacity: 1; }
-
-/* ---- hide-toolbar button: tiny, top-left, shown only while drawing ---- */
-.fs-hidebar-btn {
-  position: absolute;
-  left: max(10px, var(--sal));
-  bottom: max(10px, var(--sab));
-  top: auto;
-  width: 26px; height: 26px;
-  border-radius: 50%;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(20,21,26,.5);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  color: #fff;
-  align-items: center; justify-content: center;
-  cursor: pointer;
-  /* MUST sit above the doodle canvas/layer (z-index 9999) and doodle bar
-     (10000), otherwise the drawing canvas eats the click and the toolbar
-     never collapses. */
-  z-index: 10001;
-  opacity: .5;
-  transition: opacity .2s ease, transform .12s ease, background .15s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-.fs-hidebar-btn svg { width: 13px; height: 13px; transition: transform .18s; }
-.fs-hidebar-btn:hover,
-.fs-hidebar-btn:focus-visible { opacity: 1; background: rgba(108,140,255,.65); }
-.fs-hidebar-btn:active { transform: scale(.9); }
-/* only relevant while doodle mode is on; hidden otherwise */
-#video-wrap:not(.draw-on) .fs-hidebar-btn { display: none; }
-/* rotate the hamburger into a chevron when the toolbar is collapsed */
-#video-wrap.draw-collapsed .fs-hidebar-btn svg { transform: rotate(90deg); }
-
-/* unread pip on the FAB */
-.fs-chat-badge {
-  position: absolute; top: -4px; right: -4px;
-  min-width: 18px; height: 18px; padding: 0 4px;
-  background: var(--err); color: #fff;
-  font-size: 11px; font-weight: 700;
-  border-radius: 999px;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: 2px solid rgba(0,0,0,.4);
-  box-shadow: 0 2px 6px rgba(0,0,0,.4);
-}
-
-/* ---- Toast stack: top-center, auto-fade each item ---- */
-.fs-toast-layer {
-  position: absolute;
-  top: 14px; left: 50%; transform: translateX(-50%);
-  flex-direction: column; align-items: center; gap: 6px;
-  z-index: 14;
-  pointer-events: none;
-  width: min(86vw, 460px);
-}
-.fs-toast {
-  width: 100%;
-  background: rgba(20,21,26,.78);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255,255,255,.14);
-  color: #fff;
-  padding: 8px 12px;
-  border-radius: 12px;
-  font-size: 13px; line-height: 1.3;
-  box-shadow: 0 6px 20px rgba(0,0,0,.4);
-  opacity: 0; transform: translateY(-8px);
-  transition: opacity .25s ease, transform .25s ease;
-  display: flex; gap: 8px; align-items: flex-start;
-}
-.fs-toast.show { opacity: 1; transform: translateY(0); }
-.fs-toast .fs-toast-name {
-  color: var(--accent); font-weight: 600; flex-shrink: 0;
-  max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.fs-toast .fs-toast-text {
-  flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-}
-
-/* ---- Panel: right-side sheet over the video ---- */
-.fs-chat-panel {
-  position: absolute;
-  top: 0; right: 0;
-  /* bottom tracks the on-screen keyboard via --kb-offset (0 when no keyboard).
-     Updated by FsChat from window.visualViewport so the composer stays visible. */
-  bottom: var(--kb-offset, 0px);
-  width: min(380px, 92vw);
-  flex-direction: column;
-  /* no panel background, no blur, no border — messages float on the video */
-  background: transparent;
-  z-index: 16;
-  color: var(--text);
-  /* slide in */
-  transform: translateX(100%);
-  transition: transform .26s cubic-bezier(.32,.72,0,1), bottom .18s ease;
-}
-.fs-chat-panel.open { transform: translateX(0); }
-
-.fs-chat-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 0;
-  flex-shrink: 0;
-  /* keep clear of notches in landscape */
-  padding-top: max(12px, var(--sat));
-}
-.fs-chat-title { font-weight: 600; font-size: 14px; }
-.fs-chat-close {
-  background: transparent; border: 0; color: var(--text-dim);
-  cursor: pointer; padding: 4px; border-radius: 8px;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.fs-chat-close:hover { background: rgba(255,255,255,.08); color: #fff; }
-
-/* reply preview (mirrors the main one) */
-.fs-reply-preview {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px;
-  background: rgba(108,140,255,.1);
-  border-bottom: 1px solid rgba(108,140,255,.2);
-  flex-shrink: 0;
-}
-.fs-reply-preview.hidden { display: none; }
-.fs-reply-line { flex: 1; min-width: 0; display: flex; gap: 6px; align-items: flex-start; }
-.fs-reply-arrow { color: var(--accent); flex-shrink: 0; }
-.fs-reply-body { min-width: 0; display: flex; flex-direction: column; }
-.fs-reply-name { font-size: 12px; font-weight: 600; color: var(--accent); }
-.fs-reply-text {
-  font-size: 12px; color: var(--text-dim);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.fs-reply-cancel {
-  background: transparent; border: 0; color: var(--text-dim);
-  cursor: pointer; padding: 2px; flex-shrink: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.fs-reply-cancel:hover { color: #fff; }
-
-/* message list — clones of #chat-msgs children */
-.fs-chat-msgs {
-  flex: 1 1 auto; overflow-y: auto;
-  padding: 10px 12px;
-  display: flex; flex-direction: column; gap: 2px;
-  /* smooth momentum scroll on touch */
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  /* hide scrollbar but keep scrollable */
-  scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.2) transparent;
-}
-.fs-chat-msgs::-webkit-scrollbar { width: 6px; }
-.fs-chat-msgs::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 3px; }
-/* cloned .msg bubbles — no backgrounds/borders, text floats over the video.
-   Light text with a subtle dark shadow so it stays readable on any frame. */
-.fs-chat-msgs .msg {
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 8px rgba(0,0,0,.6);
-}
-.fs-chat-msgs .msg .meta { text-shadow: 0 1px 3px rgba(0,0,0,.85); }
-.fs-chat-msgs .msg .meta .who { color: var(--accent); }
-/* drop the bubble chrome on the message body */
-.fs-chat-msgs .msg .body {
-  background: transparent;
-  border: 0;
-  padding: 0;
-}
-.fs-chat-msgs .msg.me .body {
-  background: transparent;
-  border-color: transparent;
-}
-/* system pills keep nothing either — just the text */
-.fs-chat-msgs .msg.sys {
-  background: transparent;
-  color: rgba(255,255,255,.9);
-  text-shadow: 0 1px 3px rgba(0,0,0,.85);
-}
-
-/* customizable chat opacity — fullscreen overlay only (set in Settings).
-   --fs-chat-text-op fades each message as a unit: the bubble background,
-   text, name and timestamp all move together so the bubble never turns
-   into an empty colored box. --fs-chat-bg-op fades the backdrop panel. */
-.fs-chat-msgs .msg { opacity: var(--fs-chat-text-op); }
-
-/* composer */
-.fs-chat-form {
-  display: flex; gap: 8px;
-  padding: 10px 12px;
-  padding-bottom: max(10px, var(--sab));
-  border-top: 0;
-  flex-shrink: 0; align-items: center;
-  background: transparent;
-}
-.fs-chat-form input {
-  flex: 1;
-  background: rgba(255,255,255,.08);
-  border: 1px solid rgba(255,255,255,.14);
-  color: #fff;
-  font: inherit;
-  /* 16px prevents iOS Safari from auto-zooming on focus */
-  font-size: 16px;
-  padding: 9px 12px; border-radius: 12px;
-  min-width: 0;
-  min-height: 40px;
-  transition: border-color .14s, background .14s;
-}
-.fs-chat-form input::placeholder { color: rgba(255,255,255,.45); }
-.fs-chat-form input:focus { outline: none; border-color: var(--accent); background: rgba(255,255,255,.12); }
-.fs-chat-send {
-  background: var(--accent); border: 0; color: #fff;
-  width: 40px; height: 40px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; flex-shrink: 0;
-  transition: background .15s, transform .1s;
-}
-.fs-chat-send:hover { background: var(--accent-d); }
-.fs-chat-send:active { transform: scale(.92); }
-
-/* ---- Narrow phones: narrower panel ---- */
-@media (max-width: 480px) {
-  .fs-chat-panel { width: 100vw; }
-}
-
-/* ---- Landscape phones: keep the FAB on the right MIDDLE (not bottom) ----
-   Previously this dropped the button to the bottom-right corner, which is
-   why on horizontal phones it sat in the corner instead of mid-right.
-   We now only nudge the hide-toolbar knob; the FAB stays vertically centered. */
-@media (max-height: 500px) and (orientation: landscape) {
-  .fs-hidebar-btn { bottom: 6px; left: 8px; }
-}
-
-/* visually hidden but still in the layout so .click() opens the picker */
-.sr-only-color {
-  position: absolute;
-  width: 1px; height: 1px;
-  padding: 0; margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-  opacity: 0;
-}
-
-/* ============================================================
-   Doodle overlay
-   ------------------------------------------------------------
-   #doodle-layer lives INSIDE #video-wrap so it survives native
-   fullscreen (the Fullscreen API only renders the fullscreened
-   element + its descendants). position:fixed still covers the
-   whole viewport from inside a fullscreen parent. It is
-   pointer-events:none by default — the canvas opts in below
-   only while #video-wrap has .draw-on.
+   Doodle layer (inside #video-wrap)
    ============================================================ */
 #doodle-layer {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 9999;
+  z-index: 50;
   pointer-events: none;
-  /* the layer itself never blocks clicks; the canvas opts in below */
 }
 #doodle-canvas {
   display: block;
   width: 100%;
   height: 100%;
-  /* only capture pointer events while drawing is enabled */
   pointer-events: none;
-  touch-action: none;     /* let pointermove drive strokes, not scroll */
 }
-#video-wrap.draw-on #doodle-canvas { pointer-events: auto; }
-/* when any sheet is open the canvas must not eat events */
-body.sheet-open #doodle-canvas { pointer-events: none !important; }
-
-/* ---- Draw-mode toolbar (only visible while .draw-on) ---- */
-.doodle-bar {
-  position: fixed;
-  top: max(12px, var(--sat));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10000;
-  pointer-events: auto;              /* always clickable, even while the canvas grabs input */
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  box-shadow: var(--shadow-sm);
-  /* auto-hide when not drawing — JS toggles [hidden] too */
+/* When draw mode is active, enable pointer events on the canvas */
+.draw-on #doodle-layer {
+  pointer-events: auto;
 }
-.doodle-bar[hidden] { display: none !important; }
-.doodle-color {
-  width: 20px; height: 20px;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, .25);
-  border-radius: 50%;
-  background: var(--accent);
-  margin: 0 6px 0 4px;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, .12) inset;
-  flex-shrink: 0;
-  cursor: pointer;
-  transition: transform .1s, box-shadow .14s;
-  -webkit-tap-highlight-color: transparent;
+.draw-on #doodle-canvas {
+  pointer-events: auto;
+  cursor: crosshair;
 }
-.doodle-color:hover { transform: scale(1.12); box-shadow: 0 0 0 2px rgba(255, 255, 255, .28) inset; }
-.doodle-color:active { transform: scale(.94); }
-.doodle-bar-btn {
-  background: transparent;
-  border: 0;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 13px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background .14s, color .14s;
-  -webkit-tap-highlight-color: transparent;
-}
-.doodle-bar-btn:hover { background: rgba(255, 255, 255, .08); color: var(--text); }
-.doodle-bar-btn:active { transform: scale(.94); }
-.doodle-bar-exit { margin-left: 2px; }
-.doodle-bar-exit:hover { background: rgba(255, 93, 93, .16); color: var(--err); }
-
-/* ---- Brush size slider + live dot preview ---- */
-.doodle-size-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 6px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.doodle-size-dot {
-  width: 16px; height: 16px;
-  display: inline-flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-}
-.doodle-size-dot::after {
-  content: "";
-  display: block;
-  width: var(--doodle-size, 5px);
-  height: var(--doodle-size, 5px);
-  border-radius: 50%;
-  background: var(--text);
-  transition: width .1s, height .1s;
-}
-.doodle-size {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 76px; height: 4px;
-  background: rgba(255, 255, 255, .18);
-  border-radius: 999px;
-  outline: none;
-  cursor: pointer;
-  margin: 0;
-}
-.doodle-size::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px; height: 14px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 0;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, .15);
-}
-.doodle-size::-moz-range-thumb {
-  width: 14px; height: 14px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 0;
-}
-
-/* ---- Collapse: the top-left #fs-hidebar-btn hides the whole bar; it
-     stays on screen (via #video-wrap.draw-collapsed) so it can re-expand. ---- */
-#doodle-bar.collapsed { display: none; }
-
-/* ---- Composer tool buttons (doodle + sticker) ----
-   Mirrors .chat-send geometry (34x34 round) but transparent so
-   the composer row stays balanced on both chat surfaces. */
-.chat-tool {
-  width: 40px; height: 40px; flex-shrink: 0;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  border-radius: 50%;
-  cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: background .14s, color .14s, border-color .14s, transform .08s;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.chat-tool svg { width: 16px; height: 16px; }
-.chat-tool:hover { background: var(--panel-2); color: var(--text); border-color: var(--border-2); }
-.chat-tool:active { transform: scale(.92); }
-/* active doodle button (drawing enabled) — accent fill */
-.chat-tool[aria-pressed="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #0a0b10;
-}
-
-/* ============================================================
-   Sticker picker sheet
-   ============================================================ */
-/* The sheet lives INSIDE #video-wrap so it shows in native fullscreen,
-   which puts it in the same stacking context as the doodle layer
-   (z-index 9999) and doodle bar (10000). Lift it above both. */
-#sticker-backdrop { z-index: 10010; }
-#sticker-sheet    { z-index: 10011; }
-.sticker-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 8px;
-  margin-top: 12px;
-}
-.sticker-thumb {
-  aspect-ratio: 1;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  padding: 6px;
-  transition: border-color .14s, transform .08s, background .14s;
-  -webkit-tap-highlight-color: transparent;
-}
-.sticker-thumb:hover { border-color: var(--accent); background: var(--panel-3); }
-.sticker-thumb:active { transform: scale(.92); }
-.sticker-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.sticker-empty {
-  grid-column: 1 / -1;
-  text-align: center;
-  color: var(--text-mut);
-  font-size: 13px;
-  padding: 24px 8px;
-}
-
-/* ---- tab strip (Emoji / Mine / Tenor) ---- */
-.sticker-tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--border);
-  margin: 0 0 4px;
-}
-.sticker-tab {
-  appearance: none;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-dim);
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: color .14s, border-color .14s, background .14s;
-  -webkit-tap-highlight-color: transparent;
-  border-radius: 0;
-}
-.sticker-tab:hover { color: var(--text); background: var(--panel-2); }
-.sticker-tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-.sticker-tab.hidden { display: none; }
-
-/* ---- Tenor search row ---- */
-.sticker-search-row { margin: 0 0 4px; }
-.sticker-search-row.hidden { display: none; }
-.sticker-search-row input {
-  width: 100%;
-  padding: 9px 12px;
-  background: var(--panel-2);
-  border: 1px solid var(--border-2);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 14px;
-  outline: none;
-  transition: border-color .14s;
-}
-.sticker-search-row input:focus { border-color: var(--accent); }
-
-/* ---- Mine: add-from-device affordance ---- */
-.sticker-add-row { margin: 0 0 4px; }
-.sticker-add-row.hidden { display: none; }
-
-/* ---- emoji thumbnails render as big glyphs, not image tiles ---- */
-.sticker-thumb-emoji {
-  font-size: 30px;
-  line-height: 1;
-  padding: 0;
-  background: transparent;
-  border-color: transparent;
-}
-.sticker-thumb-emoji:hover { background: var(--panel-2); border-color: var(--border); }
-
-/* ============================================================
-   Sticker chat messages
-   ============================================================ */
-.msg .body.sticker-msg {
-  padding: 0;
-  background: transparent;
-}
-.msg .body.sticker-msg .sticker-emoji {
-  font-size: 44px;
-  line-height: 1.1;
-  display: inline-block;
-}
-.msg .body.sticker-msg .sticker-img {
-  display: block;
-  max-width: 140px;
-  max-height: 140px;
-  width: auto; height: auto;
-  border-radius: var(--radius-sm);
-  object-fit: contain;
-  background: var(--panel-2);
-}
-/* my own sticker messages align to the right edge */
-.msg.me .body.sticker-msg { text-align: right; }
-.msg.me .body.sticker-msg .sticker-img { margin-left: auto; }

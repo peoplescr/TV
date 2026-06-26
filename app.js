@@ -2101,6 +2101,22 @@
       })(quicks[i]);
     }
 
+    // playback control buttons — viewers request play/pause from host
+    var reqPlay = $("req-play");
+    var reqPause = $("req-pause");
+    if (reqPlay) {
+      reqPlay.addEventListener("click", function () {
+        broadcast({ t: "play", time: player.currentTime || 0 });
+        toast("Requested play", "ok");
+      });
+    }
+    if (reqPause) {
+      reqPause.addEventListener("click", function () {
+        broadcast({ t: "pause", time: player.currentTime || 0 });
+        toast("Requested pause", "ok");
+      });
+    }
+
     // desktop-only close button (kept for keyboard accessibility)
     var toggle = $("chat-toggle");
     if (toggle) {
