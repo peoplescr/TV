@@ -1026,6 +1026,9 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
   padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  background: rgba(12, 13, 16, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 .fs-chat-title {
   font-weight: 600;
@@ -1058,13 +1061,12 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
   width: 100%;
   max-width: 340px;
   height: 100%;
-  background: var(--panel);
-  border-left: 1px solid var(--border);
+  background: transparent;
+  border-left: none;
   z-index: 130;
   display: flex;
   flex-direction: column;
   animation: slideInChat 0.3s ease;
-  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.3);
   
   /* KEYBOARD FIX: Don't let keyboard push this panel off-screen */
   bottom: 0;
@@ -1110,6 +1112,61 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* transparent background so the video shows through */
+  background: transparent;
+}
+
+/* ---- FULLSCREEN CHAT BUBBLES — semi-opaque so they float over the video ---- */
+#fs-chat-msgs .msg .meta .who {
+  text-shadow: 0 1px 4px rgba(0,0,0,.7);
+  color: #fff;
+}
+#fs-chat-msgs .msg .meta .time {
+  color: rgba(255,255,255,.55);
+  text-shadow: 0 1px 3px rgba(0,0,0,.6);
+}
+#fs-chat-msgs .msg .body {
+  background: rgba(21, 22, 26, 0.78);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,.08);
+  border-top-left-radius: 4px;
+  padding: 8px 12px;
+  color: #ececf1;
+}
+#fs-chat-msgs .msg.me .body {
+  background: rgba(108, 140, 255, 0.22);
+  border-color: rgba(108,140,255,.28);
+  border-top-left-radius: 14px;
+  border-top-right-radius: 4px;
+}
+#fs-chat-msgs .msg.me .meta .who {
+  color: var(--ok);
+}
+#fs-chat-msgs .msg.sys {
+  background: rgba(21, 22, 26, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgba(255,255,255,.75);
+}
+#fs-chat-msgs .msg .reply-quote {
+  background: rgba(10, 11, 14, 0.6);
+  border-left-color: var(--accent);
+}
+#fs-chat-msgs .msg .react-row {
+  /* reactions float on the bubble — keep them readable */
+  background: rgba(21, 22, 26, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 12px;
+  padding: 2px 4px;
+  margin-top: 4px;
+  border: 1px solid rgba(255,255,255,.06);
+}
+#fs-chat-msgs .msg .react-chip {
+  background: rgba(37, 38, 45, 0.8);
+  border-color: rgba(255,255,255,.1);
+  color: #ececf1;
 }
 
 /* Fix chat form to stay visible above keyboard */
@@ -1119,10 +1176,12 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
   padding: 10px 12px;
   /* KEYBOARD FIX: Use bottom safe-area but allow flexibility */
   padding-bottom: max(10px, calc(env(safe-area-inset-bottom, 0px)));
-  border-top: 1px solid var(--border);
+  border-top: 1px solid rgba(255,255,255,.08);
   flex-shrink: 0;
   align-items: center;
-  background: var(--panel);
+  background: rgba(12, 13, 16, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   /* Ensure input is visible */
   position: relative;
   z-index: 150;
@@ -1130,20 +1189,21 @@ input[type="range"].fs-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 4px
 
 #fs-chat-form input {
   flex: 1;
-  background: var(--input);
-  border: 1px solid var(--border);
+  background: rgba(10, 11, 14, 0.65);
+  border: 1px solid rgba(255,255,255,.1);
   color: var(--text);
   border-radius: 999px;
   padding: 8px 14px;
   min-height: 40px;
   font: inherit;
   font-size: 16px;
-  transition: border-color .14s;
+  transition: border-color .14s, background .14s;
 }
 
 #fs-chat-form input:focus {
   outline: none;
   border-color: var(--accent);
+  background: rgba(10, 11, 14, 0.8);
   /* KEYBOARD FIX: Scroll input into view when focused */
   scroll-behavior: smooth;
 }
