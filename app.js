@@ -320,6 +320,382 @@
     pc.createOffer().then(function (offer) { return pc.setLocalDescription(offer); }).catch(function () { fail("Error"); });
   }
 
+  /* ============================================================
+     ACCOUNTS — email/password signup & login (localStorage only).
+     No backend. Passwords are hashed with a simple SHA-256 via
+     the SubtleCrypto API. Session is persisted in localStorage.
+     ============================================================ */
+  var ACCOUNTS_KEY = "wp-accounts";
+  var SESSION_KEY = "wp-session";
+
+  var Accounts = {
+    _accounts: {},   // email -> { email, passwordHash, name, pfp, roomCode, friends:[] }
+    _session: null,  // { email } or null
+
+    // ---- init ----
+    load: function () {
+      try {
+        var raw = localStorage.getItem(ACCOUNTS_KEY);
+        if (raw) this._accounts = JSON.parse(raw);
+      } catch (e) { this._accounts = {}; }
+      try {
+        var s = localStorage.getItem(SESSION_KEY);
+        if (s) this._session = JSON.parse(s);
+      } catch (e) { this._session = null; }
+    },
+    save: function () {
+      try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(this._accounts)); } catch (e) {}
+    },
+    saveSession: function () {
+      try {
+        if (this._session) localStorage.setItem(SESSION_KEY, JSON.stringify(this._session));
+        else localStorage.removeItem(SESSION_KEY);
+      } catch (e) {}
+    },
+
+    // ---- hash password with SHA-256 via SubtleCrypto ----
+    hashPass: async function (pass) {
+      var enc = new TextEncoder().encode(pass);
+      var buf = await crypto.subtle.digest("SHA-256", enc);
+      var arr = Array.from(new Uint8Array(buf));
+      return arr.map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+    },
+
+    // ---- sign up ----
+    signup: async function (email, password) {
+      email = email.trim().toLowerCase();
+      if (!email || !password) return { ok: false, err: "Email and password required." };
+      if (password.length < 6) return { ok: false, err: "Password must be at least 6 characters." };
+      if (this._accounts[email]) return { ok: false, err: "An account with this email already exists." };
+      var hash = await this.hashPass(password);
+      this._accounts[email] = {
+        email: email,
+        passwordHash: hash,
+        name: email.split("@")[0],
+        pfp: null,
+        roomCode: null,
+        friends: []   // array of friend emails
+      };
+      this.save();
+      return { ok: true };
+    },
+
+    // ---- login ----
+    login: async function (email, password) {
+      email = email.trim().toLowerCase();
+      if (!email || !password) return { ok: false, err: "Email and password required." };
+      var acct = this._accounts[email];
+      if (!acct) return { ok: false, err: "No account found with this email." };
+      var hash = await this.hashPass(password);
+      if (hash !== acct.passwordHash) return { ok: false, err: "Incorrect password." };
+      this._session = { email: email };
+      this.saveSession();
+      return { ok: true };
+    },
+
+    // ---- logout ----
+    logout: function () {
+      this._session = null;
+      this.saveSession();
+    },
+
+    // ---- session check ----
+    isLoggedIn: function () {
+      return !!(this._session && this._accounts[this._session.email]);
+    },
+    currentEmail: function () {
+      return this._session ? this._session.email : null;
+    },
+    currentAccount: function () {
+      if (!this._session) return null;
+      return this._accounts[this._session.email] || null;
+    },
+
+    // ---- update profile fields ----
+    updateName: function (name) {
+      var a = this.currentAccount();
+      if (a) { a.name = name; this.save(); }
+    },
+    updatePfp: function (pfp) {
+      var a = this.currentAccount();
+      if (a) { a.pfp = pfp; this.save(); }
+    },
+
+    // ---- room presence ----
+    setRoomCode: function (code) {
+      var a = this.currentAccount();
+      if (a) { a.roomCode = code || null; this.save(); }
+    },
+    getRoomCode: function (email) {
+      var a = this._accounts[email];
+      return a ? a.roomCode : null;
+    },
+
+    // ---- friend management ----
+    addFriend: function (friendEmail) {
+      friendEmail = friendEmail.trim().toLowerCase();
+      var me = this.currentAccount();
+      if (!me) return { ok: false, err: "You must be logged in." };
+      if (friendEmail === me.email) return { ok: false, err: "You can't add yourself." };
+      if (!this._accounts[friendEmail]) return { ok: false, err: "No account found with that email." };
+      if (me.friends.indexOf(friendEmail) !== -1) return { ok: false, err: "Already friends with this user." };
+      me.friends.push(friendEmail);
+      this.save();
+      return { ok: true };
+    },
+    removeFriend: function (friendEmail) {
+      var me = this.currentAccount();
+      if (!me) return;
+      var idx = me.friends.indexOf(friendEmail);
+      if (idx !== -1) { me.friends.splice(idx, 1); this.save(); }
+    },
+    getFriends: function () {
+      var me = this.currentAccount();
+      if (!me) return [];
+      var out = [];
+      for (var i = 0; i < me.friends.length; i++) {
+        var fe = me.friends[i];
+        var fa = this._accounts[fe];
+        if (fa) {
+          out.push({
+            email: fe,
+            name: fa.name || fe.split("@")[0],
+            pfp: fa.pfp,
+            roomCode: fa.roomCode || null
+          });
+        }
+      }
+      return out;
+    }
+  };
+  Accounts.load();
+
+  /* ============================================================
+     FRIENDS UI — renders the friends list in the lobby
+     ============================================================ */
+  function renderFriends() {
+    var list = $("friends-list");
+    if (!list) return;
+    var friends = Accounts.getFriends();
+    list.innerHTML = "";
+    if (!friends.length) {
+      var empty = document.createElement("span");
+      empty.className = "friends-empty";
+      empty.textContent = "No friends yet. Add friends by email to join their rooms directly.";
+      list.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < friends.length; i++) {
+      var f = friends[i];
+      var row = document.createElement("div");
+      row.className = "friend-row";
+
+      // avatar
+      var av = makeAvatar(f.name, f.pfp);
+      av.classList.add("avatar-sm");
+      row.appendChild(av);
+
+      // info
+      var info = document.createElement("div");
+      info.className = "friend-info";
+      var nm = document.createElement("span");
+      nm.className = "friend-name";
+      nm.textContent = f.name;
+      info.appendChild(nm);
+      var em = document.createElement("span");
+      em.className = "friend-email";
+      em.textContent = f.email;
+      info.appendChild(em);
+      row.appendChild(info);
+
+      // status / join button
+      if (f.roomCode) {
+        var joinBtn = document.createElement("button");
+        joinBtn.className = "btn btn-sm btn-primary friend-join-btn";
+        joinBtn.textContent = "Join " + f.roomCode;
+        joinBtn.title = "Join " + f.name + "'s room";
+        (function (code) {
+          joinBtn.addEventListener("click", function () {
+            saveName();
+            state._intent = "join";
+            location.hash = "room=" + code;
+            joinRoom(code);
+          });
+        })(f.roomCode);
+        row.appendChild(joinBtn);
+      } else {
+        var status = document.createElement("span");
+        status.className = "friend-offline";
+        status.textContent = "Offline";
+        row.appendChild(status);
+      }
+
+      // remove button
+      var rmBtn = document.createElement("button");
+      rmBtn.className = "friend-remove";
+      rmBtn.textContent = "×";
+      rmBtn.title = "Remove friend";
+      (function (email) {
+        rmBtn.addEventListener("click", function () {
+          Accounts.removeFriend(email);
+          renderFriends();
+          toast("Friend removed.", "");
+        });
+      })(f.email);
+      row.appendChild(rmBtn);
+
+      list.appendChild(row);
+    }
+  }
+
+  function updateAuthUI() {
+    var loggedOut = $("auth-logged-out");
+    var loggedIn = $("auth-logged-in");
+    var friendsSection = $("friends-section");
+    var authStatus = $("auth-status");
+    if (Accounts.isLoggedIn()) {
+      loggedOut.classList.add("hidden");
+      loggedIn.classList.remove("hidden");
+      $("auth-email-display").textContent = Accounts.currentEmail();
+      friendsSection.classList.remove("hidden");
+      if (authStatus) authStatus.textContent = "Signed in as " + Accounts.currentEmail();
+      renderFriends();
+    } else {
+      loggedOut.classList.remove("hidden");
+      loggedIn.classList.add("hidden");
+      friendsSection.classList.add("hidden");
+      if (authStatus) authStatus.textContent = "No sign-up.";
+    }
+  }
+
+  function wireAuth() {
+    // Show login form
+    $("auth-show-login-btn").addEventListener("click", function () {
+      showAuthForm("login");
+    });
+    $("auth-show-signup-btn").addEventListener("click", function () {
+      showAuthForm("signup");
+    });
+    $("auth-form-close").addEventListener("click", hideAuthForm);
+    $("auth-form-overlay").addEventListener("click", function (e) {
+      if (e.target === $("auth-form-overlay")) hideAuthForm();
+    });
+
+    // Toggle between login/signup
+    $("auth-toggle-link").addEventListener("click", function (e) {
+      e.preventDefault();
+      var title = $("auth-form-title");
+      var btn = $("auth-submit-btn");
+      var toggleText = $("auth-toggle-text");
+      if (title.textContent === "Sign In") {
+        showAuthForm("signup");
+      } else {
+        showAuthForm("login");
+      }
+    });
+
+    // Submit
+    $("auth-submit-btn").addEventListener("click", function () {
+      handleAuthSubmit();
+    });
+    $("auth-pass-input").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") handleAuthSubmit();
+    });
+    $("auth-email-input").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") handleAuthSubmit();
+    });
+
+    // Logout
+    $("auth-logout-btn").addEventListener("click", function () {
+      Accounts.logout();
+      updateAuthUI();
+      toast("Logged out.", "");
+    });
+
+    // Friends
+    $("friends-add-btn").addEventListener("click", function () {
+      $("friends-add-form").classList.toggle("hidden");
+      $("friends-email-input").value = "";
+      $("friends-email-input").focus();
+    });
+    $("friends-cancel-add").addEventListener("click", function () {
+      $("friends-add-form").classList.add("hidden");
+    });
+    $("friends-send-request").addEventListener("click", function () {
+      var email = $("friends-email-input").value.trim();
+      if (!email) { toast("Enter an email address.", "warn"); return; }
+      var result = Accounts.addFriend(email);
+      if (result.ok) {
+        toast("Friend added!", "ok");
+        $("friends-add-form").classList.add("hidden");
+        renderFriends();
+      } else {
+        toast(result.err, "err");
+      }
+    });
+    $("friends-email-input").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") $("friends-send-request").click();
+    });
+  }
+
+  var _authMode = "login";
+  function showAuthForm(mode) {
+    _authMode = mode;
+    $("auth-form-overlay").classList.remove("hidden");
+    $("auth-err").textContent = "";
+    $("auth-err").className = "lobby-msg";
+    $("auth-email-input").value = "";
+    $("auth-pass-input").value = "";
+    if (mode === "login") {
+      $("auth-form-title").textContent = "Sign In";
+      $("auth-submit-btn").textContent = "Sign In";
+      $("auth-toggle-text").innerHTML = 'Don\'t have an account? <a href="#" id="auth-toggle-link">Sign up</a>';
+    } else {
+      $("auth-form-title").textContent = "Create Account";
+      $("auth-submit-btn").textContent = "Create Account";
+      $("auth-toggle-text").innerHTML = 'Already have an account? <a href="#" id="auth-toggle-link">Sign in</a>';
+    }
+    // Re-bind toggle link
+    $("auth-toggle-link").addEventListener("click", function (e) {
+      e.preventDefault();
+      showAuthForm(_authMode === "login" ? "signup" : "login");
+    });
+    setTimeout(function () { $("auth-email-input").focus(); }, 100);
+  }
+  function hideAuthForm() {
+    $("auth-form-overlay").classList.add("hidden");
+  }
+  async function handleAuthSubmit() {
+    var email = $("auth-email-input").value.trim();
+    var pass = $("auth-pass-input").value;
+    var errEl = $("auth-err");
+    if (_authMode === "login") {
+      var res = await Accounts.login(email, pass);
+      if (res.ok) {
+        hideAuthForm();
+        updateAuthUI();
+        toast("Signed in as " + email, "ok");
+      } else {
+        errEl.textContent = res.err;
+        errEl.className = "lobby-msg err";
+      }
+    } else {
+      var res = await Accounts.signup(email, pass);
+      if (res.ok) {
+        // Auto-login after signup
+        var loginRes = await Accounts.login(email, pass);
+        if (loginRes.ok) {
+          hideAuthForm();
+          updateAuthUI();
+          toast("Account created! Signed in as " + email, "ok");
+        }
+      } else {
+        errEl.textContent = res.err;
+        errEl.className = "lobby-msg err";
+      }
+    }
+  }
+
   var PEER_PREFIX = "wp-";           // host peer id = PEER_PREFIX + room
   var DRIFT_HARD = 1.5;              // seconds — hard seek above this
   var CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
@@ -731,6 +1107,8 @@
     state.isHost = true;
     enterRoomUI(code);
     setRole(true);
+    // Save room code to account for friend presence
+    Accounts.setRoomCode(code);
 
     // TURN relay is configured statically, so this resolves immediately.
     whenXirsysReady(function (ok) {
@@ -811,6 +1189,8 @@
     state.isHost = false;
     enterRoomUI(code);
     setRole(false);
+    // Save room code to account for friend presence
+    Accounts.setRoomCode(code);
 
     // TURN relay is configured statically, so this resolves immediately.
     whenXirsysReady(function (ok) {
@@ -3657,6 +4037,12 @@
     MediaMeter.reset();
     setOnline("offline");
     showScreen("lobby");
+    // Clear room presence when leaving
+    if (Accounts.isLoggedIn()) {
+      Accounts.setRoomCode(null);
+      // Re-render friends list so other friends see us offline
+      try { renderFriends(); } catch (e) {}
+    }
   }
 
   /* ============================================================
@@ -3735,6 +4121,10 @@
     ChatOpacity.load();   // restore fullscreen chat opacity CSS vars early
     initLobby();
     console.log("[Watch Party] lobby wired");
+    wireAuth();
+    console.log("[Watch Party] auth wired");
+    updateAuthUI();
+    console.log("[Watch Party] auth UI updated");
     wirePlayerEvents();
     console.log("[Watch Party] player wired");
     wireChat();
@@ -3748,10 +4138,14 @@
     console.log("[Watch Party] settings wired");
     updateTurnBadge();   // show initial TURN… state (updates again when fetch settles)
     window.addEventListener("hashchange", onHash);
+    // re-render friends on hash change (presence changes)
+    window.addEventListener("hashchange", function () {
+      if (Accounts.isLoggedIn()) renderFriends();
+    });
 
     // route on first load
     var code = parseHash();
-    if (code) onHash(); else showScreen("lobby");
+    if (code) onHash(); else { showScreen("lobby"); updateAuthUI(); }
   }
 
   // boot

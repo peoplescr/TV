@@ -19,7 +19,7 @@
 <body>
 
   <!-- ============================================================= -->
-  <!--  LOBBY — name + pfp + create/join                              -->
+  <!--  LOBBY — name + pfp + auth + create/join + friends              -->
   <!-- ============================================================= -->
   <section id="lobby" class="screen">
     <div class="lobby-card">
@@ -27,8 +27,68 @@
         <span class="dot"></span>
         <h1>Watch Party</h1>
       </div>
-      <p class="lobby-sub">Watch anything together. Free. No sign-up.</p>
+      <p class="lobby-sub">Watch anything together. Free. <span id="auth-status">No sign-up.</span></p>
 
+      <!-- ============ AUTH SECTION ============ -->
+      <div id="auth-section" class="auth-section">
+        <!-- Logged-out view: sign in / sign up buttons -->
+        <div id="auth-logged-out" class="auth-btns">
+          <button id="auth-show-login-btn" class="btn btn-primary btn-block">Sign In</button>
+          <button id="auth-show-signup-btn" class="btn btn-block" style="margin-top:6px">Create Account</button>
+        </div>
+
+        <!-- Logged-in view: show email + logout -->
+        <div id="auth-logged-in" class="auth-bar hidden">
+          <span class="auth-email" id="auth-email-display"></span>
+          <button id="auth-logout-btn" class="btn btn-sm">Logout</button>
+        </div>
+      </div>
+
+      <!-- ============ LOGIN FORM (sheet/popup) ============ -->
+      <div id="auth-form-overlay" class="hidden">
+        <div id="auth-form-card" class="auth-form-card">
+          <div class="auth-form-head">
+            <strong id="auth-form-title">Sign In</strong>
+            <button id="auth-form-close" class="icon-btn icon-btn-sm" title="Close" aria-label="Close">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            </button>
+          </div>
+          <div class="auth-form-body">
+            <label class="field">
+              <span>Email</span>
+              <input id="auth-email-input" type="email" maxlength="64" placeholder="you@example.com" autocomplete="email" />
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <input id="auth-pass-input" type="password" maxlength="64" placeholder="At least 6 characters" autocomplete="current-password" />
+            </label>
+            <p id="auth-err" class="lobby-msg"></p>
+            <button id="auth-submit-btn" class="btn btn-primary btn-block">Sign In</button>
+            <p id="auth-toggle-text" class="auth-toggle-text">Don't have an account? <a href="#" id="auth-toggle-link">Sign up</a></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ FRIENDS SECTION ============ -->
+      <div id="friends-section" class="friends-section hidden">
+        <div class="friends-head">
+          <strong>Friends</strong>
+          <button id="friends-add-btn" class="btn btn-sm" title="Add friend by email">+ Add</button>
+        </div>
+        <div id="friends-list" class="friends-list">
+          <span class="friends-empty">No friends yet. Add friends by email to join their rooms directly.</span>
+        </div>
+        <!-- Add friend form (inline, expandable) -->
+        <div id="friends-add-form" class="friends-add-form hidden">
+          <input id="friends-email-input" type="email" maxlength="64" placeholder="friend@example.com" autocomplete="off" />
+          <div class="friends-add-actions">
+            <button id="friends-send-request" class="btn btn-sm btn-primary">Add</button>
+            <button id="friends-cancel-add" class="btn btn-sm">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ EXISTING LOBBY CONTENT ============ -->
       <!-- profile picture picker -->
       <div class="pfp-picker">
         <button id="pfp-btn" class="pfp-avatar" type="button" title="Choose a profile picture" aria-label="Choose a profile picture">
@@ -101,7 +161,7 @@
       </div>
     </header>
 
-    <main id="stage" class="stage">
+    <main class="stage">
       <!-- ---------------- video column ---------------- -->
       <div class="video-col">
         <!-- hide/show toggle for the controls tray (sits above the player) -->
@@ -133,8 +193,6 @@
 
           <!-- ========================================================= -->
           <!--  FULLSCREEN CHAT OVERLAY                                    -->
-          <!--  Only visible while #video-wrap is fullscreen (native or   -->
-          <!--  the iOS CSS fallback). Lets you text without leaving FS.   -->
           <!-- ========================================================= -->
 
           <!-- top-left button to collapse the doodle toolbar while drawing -->
@@ -191,10 +249,7 @@
             </form>
           </aside>
 
-          <!-- doodle overlay — lives INSIDE #video-wrap so it stays visible in
-               native fullscreen (the Fullscreen API only renders the fullscreened
-               element + descendants; siblings would vanish). position:fixed still
-               covers the whole viewport correctly inside a fullscreen parent. -->
+          <!-- doodle overlay -->
           <div id="doodle-layer" aria-hidden="true">
             <canvas id="doodle-canvas"></canvas>
           </div>
@@ -212,10 +267,7 @@
             </button>
           </div>
 
-          <!-- sticker picker — lives INSIDE #video-wrap so it renders in
-               native fullscreen (the Fullscreen API only shows the
-               fullscreened element + its descendants). position:fixed still
-               covers the viewport from inside a fullscreen parent. -->
+          <!-- sticker picker -->
           <div id="sticker-backdrop" class="sheet-backdrop hidden" aria-hidden="true"></div>
           <section id="sticker-sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-label="Stickers">
             <header class="sheet-head">
@@ -330,8 +382,11 @@
           <button class="react-quick" data-emoji="😮" title="Wow">😮</button>
           <button class="react-quick" data-emoji="😭" title="Cry">😭</button>
         </div>
-        <!-- viewers can control playback directly via the video player controls
-             (play/pause click, seekbar, spacebar, arrow keys) — changes sync to everyone -->
+        <!-- playback control buttons for viewers to request play/pause from host -->
+        <div id="playback-bar">
+          <button id="req-play" class="playback-btn" type="button" title="Request play">▶️ Play</button>
+          <button id="req-pause" class="playback-btn" type="button" title="Request pause">⏸️ Pause</button>
+        </div>
 
         <form id="chat-form" class="chat-form">
           <button id="doodle-btn" class="chat-tool" type="button" title="Doodle" aria-label="Toggle doodle drawing" aria-pressed="false">
@@ -409,7 +464,7 @@
         <div class="range-row">
           <span class="range-row-text">
             <strong>Messages</strong>
-            <small>Opacity of chat messages (text &amp; bubbles together)</small>
+            <small>Opacity of chat messages (text & bubbles together)</small>
           </span>
           <span class="range-control">
             <input type="range" id="fs-text-op" class="fs-range" min="0" max="100" value="80" aria-label="Chat message opacity in fullscreen" />
@@ -546,9 +601,7 @@
   <script src="subtitles.js"></script>
   <!-- main app -->
   <script src="app.js"></script>
-  <!-- PWA service worker (caches the shell for offline / install).
-       Skipped inside the Capacitor native WebView (window.Capacitor) where a
-       SW would only cause pointless registration errors. -->
+  <!-- PWA service worker -->
   <script>
     if ("serviceWorker" in navigator && !(window.Capacitor && window.Capacitor.isNative && window.Capacitor.isNative())) {
       window.addEventListener("load", function () {
